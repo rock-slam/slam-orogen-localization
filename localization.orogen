@@ -1,0 +1,84 @@
+name "localization"
+
+using_library 'envire'
+using_library 'pcl_registration-1.7'
+using_library 'velodyne_lidar'
+
+import_types_from 'base'
+import_types_from 'envire'
+import_types_from 'velodyne_lidar/MultilevelLaserScan.h'
+
+task_context "Task" do
+    needs_configuration
+
+    # load environment
+    property('environment_path', 'string', "").
+        doc 'if this property is set, this will be used as the inital environment.'
+
+    # icp configuration
+    property('max_icp_fitness_score', 'double', 1.0).
+        doc 'the maximum fitness score an icp transformation can have to be valid'
+    property('icp_match_interval', 'double', 2.0).
+        doc 'odometry delta after which a new icp match is performed'
+
+    ## input ports
+    input_port('envire_map', ro_ptr('std/vector</envire/BinaryEvent>')).
+        needs_reliable_connection.
+        doc 'the envire map'
+        
+    input_port('odometry_samples', '/base/samples/RigidBodyState').
+        doc 'odometry samples'
+        
+    ## output ports
+    output_port('pose_samples', '/base/samples/RigidBodyState').
+        doc 'timestamped samples of the current pose of the robot.'
+end
+
+task_context "PointcloudInMLS" do
+    subclasses "Task"
+    needs_configuration
+
+    ## input ports
+    input_port('pointcloud_samples', '/base/samples/Pointcloud').
+        doc 'simulated pointcloud data'
+    
+    ## transformer config
+    transformer do
+        max_latency( 0.2 )
+
+        transformation("pointcloud", "body")
+        transformation("body", "odometry")
+
+        align_port("pointcloud_samples", 0.1)
+    end
+    
+    port_driven
+end
+
+task_context "VelodyneInMLS" do
+    subclasses "Task"
+    needs_configuration
+
+    ## point cloud filter parameter
+    property('maximum_angle_to_neighbor', 'double', 2.53).
+        doc('valid neigbors have an angle not greater than this value.').
+        doc('the angle is always defined from the origin to the more distant point.')
+    property('minimum_valid_neighbors', 'int', 2).
+        doc('minimum amount of valid neigbors')
+
+    ## input ports
+    input_port('lidar_samples', '/velodyne_lidar/MultilevelLaserScan').
+        doc 'timestamped 3d laser scans'
+    
+    ## transformer config
+    transformer do
+        max_latency( 0.2 )
+
+        transformation("laser", "body")
+        transformation("body", "odometry")
+
+        align_port("lidar_samples", 0.1)
+    end
+    
+    port_driven
+end
