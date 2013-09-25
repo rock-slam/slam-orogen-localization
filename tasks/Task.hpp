@@ -54,6 +54,8 @@ namespace localization {
         boost::shared_ptr< pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> > icp;
         PCLPointCloudPtr map_pointcloud;
         unsigned max_input_sample_count;
+        States last_state;
+        States new_state;
 
         /**
          * Computes a pointcloud from a given MLS grid.

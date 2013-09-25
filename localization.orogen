@@ -32,6 +32,9 @@ task_context "Task" do
     ## output ports
     output_port('pose_samples', '/base/samples/RigidBodyState').
         doc 'timestamped samples of the current pose of the robot.'
+
+    ## states
+    runtime_states :MISSING_TRANSFORMATION, :ICP_ALIGNMENT_FAILED
 end
 
 task_context "PointcloudInMLS" do

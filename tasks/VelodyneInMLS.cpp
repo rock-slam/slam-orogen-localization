@@ -24,13 +24,15 @@ void VelodyneInMLS::lidar_samplesTransformerCallback(const base::Time &ts, const
     Eigen::Affine3d laser2body;
     if (!_laser2body.get(ts, laser2body))
     {
-        std::cerr << "skip, have no laser2body transformation sample!" << std::endl;
+        RTT::log(RTT::Error) << "skip, have no laser2body transformation sample!" << RTT::endlog();
+        new_state = TaskBase::MISSING_TRANSFORMATION;
         return;
     }
     envire::TransformWithUncertainty body2odometry;
     if (!_body2odometry.get(ts, body2odometry, true))
     {
-        std::cerr << "skip, have no body2odometry transformation sample!" << std::endl;
+        RTT::log(RTT::Error) << "skip, have no body2odometry transformation sample!" << RTT::endlog();
+        new_state = TaskBase::MISSING_TRANSFORMATION;
         return;
     }
 

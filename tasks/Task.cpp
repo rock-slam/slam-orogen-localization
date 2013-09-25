@@ -135,7 +135,8 @@ void Task::alignPointcloud(const PCLPointCloudPtr sample_pointcoud, const envire
     }
     else
     {
-        // warning
+        RTT::log(RTT::Info) << "ICP alignment failed, perhaps a model update is necessary." << RTT::endlog();
+        new_state = ICP_ALIGNMENT_FAILED;
     }
 
 }
@@ -174,17 +175,24 @@ bool Task::configureHook()
 {
     if (! TaskBase::configureHook())
         return false;
+    
+    last_state = PRE_OPERATIONAL;
+    new_state = RUNNING;
 
+    // set inital transformations
     last_body2world = envire::TransformWithUncertainty::Identity();
     last_body2odometry = envire::TransformWithUncertainty::Identity();
     last_odometry2body = envire::TransformWithUncertainty::Identity();
     map2world = envire::TransformWithUncertainty::Identity();
     
+    // reset map point cloud
     map_pointcloud.reset(new PCLPointCloud());
 
+    // setup environment
     env.reset(new envire::Environment());
     env->addEventHandler(new MLSEventHandler(this));
 
+    // set icp config
     icp.reset(new pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ>());
     icp->setMaxCorrespondenceDistance(2.5);
     icp->setMaximumIterations(50);
@@ -214,16 +222,24 @@ void Task::updateHook()
     {
         env->applyEvents(*binary_event);
     }
-
+    
+    new_state = RUNNING;
     TaskBase::updateHook();
 
+    // write adjusted pose
     base::samples::RigidBodyState odometry_sample;
     if(_odometry_samples.readNewest(odometry_sample) == RTT::NewData)
     {
         Eigen::Affine3d odometry_delta = last_odometry2body.getTransform() * odometry_sample.getTransform();
         odometry_sample.setTransform(last_body2world.getTransform() * odometry_delta);
-        odometry_sample.time = base::Time::now();
         _pose_samples.write(odometry_sample);
+    }
+
+    // write state if it has changed
+    if(last_state != new_state)
+    {
+        last_state = new_state;
+        state(new_state);
     }
 }
 void Task::errorHook()
