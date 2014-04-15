@@ -40,8 +40,6 @@ void Task::updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid)
         vertical_distance = 0.1;
 
     Eigen::Affine3d map2world_affined(map2world.getTransform());
-
-    base::samples::Pointcloud cloud;
     
     // create pointcloud from mls
     for(size_t x=0;x<mls_grid->getCellSizeX();x++)
@@ -65,7 +63,7 @@ void Task::updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid)
                     
                     Eigen::Vector3d debugPoint(cellPosWorld);
                     debugPoint.z() += p.mean;
-                    cloud.points.push_back(map2world_affined * debugPoint);
+                    model_cloud.points.push_back(map2world_affined * debugPoint);
                 }
                 else if(p.isVertical())
                 {
@@ -79,14 +77,17 @@ void Task::updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid)
 
                         Eigen::Vector3d debugPoint(cellPosWorld);
                         debugPoint.z() += z;
-                        cloud.points.push_back(map2world_affined * debugPoint);
+                        model_cloud.points.push_back(map2world_affined * debugPoint);
                     }
                 }
             }
         }
     }
     
-    _debug_map_pointcloud.write(cloud);
+    for(unsigned i = 0; i < model_cloud.points.size(); i++)
+	model_cloud.colors.push_back(base::Vector4d(0.0, 1.0, 0.0, 1.0));
+    
+    _debug_map_pointcloud.write(model_cloud);
     
     if(map_pointcloud->size())
         icp->setInputTarget(map_pointcloud);
@@ -94,6 +95,8 @@ void Task::updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid)
 
 void Task::alignPointcloud(const base::Time &ts, const std::vector<base::Vector3d>& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry)
 {
+    aligned_cloud.points = sample_pointcloud;
+    aligned_cloud.colors.resize(sample_pointcloud.size(), base::Vector4d(1.0, 0.0, 0.0, 1.0));
     PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
     pcl_pointcloud->reserve(std::max((u_int64_t)sample_pointcloud.size(), (u_int64_t)max_input_sample_count));
     std::vector<bool> mask;
@@ -112,6 +115,8 @@ void Task::alignPointcloud(const base::Time &ts, const std::vector<base::Vector3
 
 void Task::alignPointcloud(const base::Time &ts, const std::vector<Eigen::Vector3d>& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry)
 {
+    aligned_cloud.points.clear();
+    aligned_cloud.colors.resize(sample_pointcloud.size(), base::Vector4d(1.0, 0.0, 0.0, 1.0));
     PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
     pcl_pointcloud->reserve(std::max((u_int64_t)sample_pointcloud.size(), (u_int64_t)max_input_sample_count));
     std::vector<bool> mask;
@@ -124,6 +129,7 @@ void Task::alignPointcloud(const base::Time &ts, const std::vector<Eigen::Vector
             point.getVector3fMap() = sample_pointcloud[i].cast<float>();
             pcl_pointcloud->push_back(point);
         }
+        aligned_cloud.points.push_back(sample_pointcloud[i]);
     }
     alignPointcloud(ts, pcl_pointcloud, body2odometry);
 }
@@ -170,6 +176,20 @@ void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr sample_p
     base::Time end = base::Time::now();
 
     std::cout << "icp took " << end-start << std::endl;
+    
+    if(_write_debug_pointcloud)
+    {
+	for(unsigned i = 0; i < aligned_cloud.points.size(); i++)
+	{
+	    aligned_cloud.points[i] = last_body2world.getTransform() * aligned_cloud.points[i];
+	}
+	base::samples::Pointcloud debug_cloud;
+	debug_cloud.points = model_cloud.points;
+	debug_cloud.colors = model_cloud.colors;
+	debug_cloud.points.insert(debug_cloud.points.end(), aligned_cloud.points.begin(), aligned_cloud.points.end());
+	debug_cloud.colors.insert(debug_cloud.colors.end(), aligned_cloud.colors.begin(), aligned_cloud.colors.end());
+	_debug_map_pointcloud.write(debug_cloud);
+    }
 }
 
 void Task::updatePosition(const base::Time &curTime, const Eigen::Affine3d &curBody2Odometry, bool write)

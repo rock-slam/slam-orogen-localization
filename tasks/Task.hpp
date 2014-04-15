@@ -57,6 +57,8 @@ namespace localization {
 	base::Time last_icp_match;
         States last_state;
         States new_state;
+	base::samples::Pointcloud model_cloud;
+	base::samples::Pointcloud aligned_cloud;
         
         std::string bodyName;
         std::string worldName;

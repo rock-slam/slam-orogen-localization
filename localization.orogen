@@ -28,6 +28,8 @@ task_context "Task" do
     property('outputFrameName', 'string', 'localization').
         doc 'Name of the frame, of the provided transformations by this component. E.g. body to localization'
 
+    property('write_debug_pointcloud', 'bool', false)
+
     ## input ports
     input_port('envire_map', ro_ptr('std/vector</envire/BinaryEvent>')).
         needs_reliable_connection.
