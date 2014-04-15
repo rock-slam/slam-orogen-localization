@@ -22,7 +22,7 @@ VelodyneInMLS::~VelodyneInMLS()
 void VelodyneInMLS::lidar_samplesTransformerCallback(const base::Time &ts, const ::velodyne_lidar::MultilevelLaserScan &lidar_samples_sample)
 {
     Eigen::Affine3d laser2body;
-    if (!_laser2body.get(ts, laser2body))
+    if (!_velodyne2body.get(ts, laser2body))
     {
         RTT::log(RTT::Error) << "skip, have no laser2body transformation sample!" << RTT::endlog();
         new_state = TaskBase::MISSING_TRANSFORMATION;
