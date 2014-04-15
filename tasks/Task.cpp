@@ -205,8 +205,23 @@ bool Task::configureHook()
     icp->setRotationEpsilon(2e-3);
     max_input_sample_count = 10000;
 
+    // load inital environment
     if(!_environment_path.get().empty())
-        env->unserialize(_environment_path);
+    {
+        boost::shared_ptr<envire::Environment> inital_env(envire::Environment::unserialize(_environment_path));
+	try
+	{
+	    if(!inital_env.get())
+		throw std::runtime_error("couldn't load inital environment.");
+	    boost::intrusive_ptr<envire::MLSGrid> mls_grid = inital_env->getItem<envire::MLSGrid>();
+	    updateICPModelFromMap(mls_grid.get());
+	    RTT::log(RTT::Info) << "Successfully loaded inital multi-level surface grid." << RTT::endlog();
+	}
+	catch(std::runtime_error e)
+	{
+	    RTT::log(RTT::Error) << "Couldn't load inital multi-level surface grid: " << e.what() << RTT::endlog();
+	}
+    }
 
     return true;
 }
