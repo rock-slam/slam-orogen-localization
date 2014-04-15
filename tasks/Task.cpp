@@ -180,7 +180,7 @@ bool Task::configureHook()
     new_state = RUNNING;
 
     // set inital transformations
-    last_body2world = envire::TransformWithUncertainty::Identity();
+    last_body2world.setTransform(_start_pose.get().getTransform());
     last_body2odometry = envire::TransformWithUncertainty::Identity();
     last_odometry2body = envire::TransformWithUncertainty::Identity();
     map2world = envire::TransformWithUncertainty::Identity();

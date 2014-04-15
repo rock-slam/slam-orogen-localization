@@ -14,6 +14,8 @@ task_context "Task" do
     # load environment
     property('environment_path', 'string', "").
         doc 'if this property is set, this will be used as the inital environment.'
+    property('start_pose', '/base/samples/RigidBodyState').
+        doc 'start pose of the robot in the map frame'
 
     # icp configuration
     property('max_icp_fitness_score', 'double', 1.0).
