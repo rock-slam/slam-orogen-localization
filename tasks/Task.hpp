@@ -72,9 +72,9 @@ namespace localization {
          * Aligns the given sample pointcloud to the current map model.
          * A current odometry sample is mandatory for this step.
          */
-        void alignPointcloud(const std::vector<base::Vector3d>& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry);
-        void alignPointcloud(const std::vector<Eigen::Vector3d>& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry);
-        void alignPointcloud(const PCLPointCloudPtr sample_pointcoud, const envire::TransformWithUncertainty& body2odometry);
+        void alignPointcloud(const base::Time& ts, const std::vector< base::Vector3d >& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry);
+        void alignPointcloud(const base::Time& ts, const std::vector< Eigen::Vector3d >& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry);
+        void alignPointcloud(const base::Time& ts, const PCLPointCloudPtr sample_pointcoud, const envire::TransformWithUncertainty& body2odometry);
 
         /**
          * Creates a mask to sub sample a pointcloud.

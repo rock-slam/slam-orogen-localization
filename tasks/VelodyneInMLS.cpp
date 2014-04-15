@@ -56,7 +56,7 @@ void VelodyneInMLS::lidar_samplesTransformerCallback(const base::Time &ts, const
         velodyne_lidar::ConvertHelper::convertScanToPointCloud(filtered_lidar_sample, pointcloud, laser2body);
 
         // align pointcloud to map
-        alignPointcloud(pointcloud, body2odometry);
+        alignPointcloud(ts, pointcloud, body2odometry);
     }
 }
 

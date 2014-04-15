@@ -92,7 +92,7 @@ void Task::updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid)
         icp->setInputTarget(map_pointcloud);
 }
 
-void Task::alignPointcloud(const std::vector<base::Vector3d>& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry)
+void Task::alignPointcloud(const base::Time &ts, const std::vector<base::Vector3d>& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry)
 {
     PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
     pcl_pointcloud->reserve(std::max((u_int64_t)sample_pointcloud.size(), (u_int64_t)max_input_sample_count));
@@ -107,10 +107,10 @@ void Task::alignPointcloud(const std::vector<base::Vector3d>& sample_pointcloud,
             pcl_pointcloud->push_back(point);
         }
     }
-    alignPointcloud(pcl_pointcloud, body2odometry);
+    alignPointcloud(ts, pcl_pointcloud, body2odometry);
 }
 
-void Task::alignPointcloud(const std::vector<Eigen::Vector3d>& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry)
+void Task::alignPointcloud(const base::Time &ts, const std::vector<Eigen::Vector3d>& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry)
 {
     PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
     pcl_pointcloud->reserve(std::max((u_int64_t)sample_pointcloud.size(), (u_int64_t)max_input_sample_count));
@@ -125,10 +125,10 @@ void Task::alignPointcloud(const std::vector<Eigen::Vector3d>& sample_pointcloud
             pcl_pointcloud->push_back(point);
         }
     }
-    alignPointcloud(pcl_pointcloud, body2odometry);
+    alignPointcloud(ts, pcl_pointcloud, body2odometry);
 }
 
-void Task::alignPointcloud(const PCLPointCloudPtr sample_pointcoud, const envire::TransformWithUncertainty& body2odometry)
+void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr sample_pointcoud, const envire::TransformWithUncertainty& body2odometry)
 {
     if(!icp->getInputTarget().get())
         return;
@@ -149,6 +149,9 @@ void Task::alignPointcloud(const PCLPointCloudPtr sample_pointcoud, const envire
 
         last_body2odometry = body2odometry;
         last_odometry2body = body2odometry.inverse();
+        
+        //write out current odometry sample
+        updatePosition(ts, last_body2odometry.getTransform(), true);
     }
     else
     {

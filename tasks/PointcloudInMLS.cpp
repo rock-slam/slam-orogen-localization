@@ -46,6 +46,9 @@ void PointcloudInMLS::pointcloud_samplesTransformerCallback(const base::Time &ts
         new_state = TaskBase::MISSING_TRANSFORMATION;
         return;
     }
+    
+    updatePosition(ts, body2odometry.getTransform(), true);
+    
 
     if(pointcloud2body.matrix() != Eigen::Matrix4d::Identity())
     {
@@ -56,10 +59,10 @@ void PointcloudInMLS::pointcloud_samplesTransformerCallback(const base::Time &ts
         {
             transformed_pointcloud.push_back(pointcloud2body * (*it));
         }
-        alignPointcloud(transformed_pointcloud, body2odometry);
+        alignPointcloud(ts, transformed_pointcloud, body2odometry);
     }
     else
-        alignPointcloud(pointcloud_samples_sample.points, body2odometry);
+        alignPointcloud(ts, pointcloud_samples_sample.points, body2odometry);
 }
 
 
