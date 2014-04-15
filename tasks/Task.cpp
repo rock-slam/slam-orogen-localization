@@ -1,6 +1,7 @@
 /* Generated from orogen/lib/orogen/templates/tasks/Task.cpp */
 
 #include "Task.hpp"
+#include <base/samples/Pointcloud.hpp>
 
 using namespace localization;
 
@@ -25,7 +26,7 @@ void MLSEventHandler::handle( const envire::Event& event )
        (event.operation == envire::event::ADD || event.operation == envire::event::UPDATE) && 
         mls_grid)
     {
-        task->updateICPModelFromMap(mls_grid);
+        task->gotNewMls = true;
     }
 }
 
@@ -38,25 +39,33 @@ void Task::updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid)
     if(vertical_distance <= 0.0)
         vertical_distance = 0.1;
 
+    Eigen::Affine3d map2world_affined(map2world.getTransform());
+
+    base::samples::Pointcloud cloud;
+    
     // create pointcloud from mls
-    for(size_t m=0;m<mls_grid->getWidth();m++)
+    for(size_t x=0;x<mls_grid->getCellSizeX();x++)
     {
-        for(size_t n=0;n<mls_grid->getHeight();n++)
+        for(size_t y=0;y<mls_grid->getCellSizeY();y++)
         {
-            for( envire::MLSGrid::iterator cit = mls_grid->beginCell(m,n); cit != mls_grid->endCell(); cit++ )
+            for( envire::MLSGrid::iterator cit = mls_grid->beginCell(x,y); cit != mls_grid->endCell(); cit++ )
             {
                 envire::MLSGrid::SurfacePatch p( *cit );
                 
-                double x, y;
-                mls_grid->fromGrid(m, n, x, y);
+                Eigen::Vector3d cellPosWorld = mls_grid->fromGrid(x, y, mls_grid->getEnvironment()->getRootNode());
                 pcl::PointXYZ point;
-                point.x = x;
-                point.y = y;
+                point.x = cellPosWorld.x();
+                point.y = cellPosWorld.y();
+                point.z = cellPosWorld.z();
                 if(p.isHorizontal())
                 {
-                    point.z = p.mean;
+                    point.z = cellPosWorld.z() + p.mean;
                     point.getVector3fMap() = map2world_affine * point.getVector3fMap();
                     map_pointcloud->push_back(point);
+                    
+                    Eigen::Vector3d debugPoint(cellPosWorld);
+                    debugPoint.z() += p.mean;
+                    cloud.points.push_back(map2world_affined * debugPoint);
                 }
                 else if(p.isVertical())
                 {
@@ -64,14 +73,20 @@ void Task::updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid)
                     float max_z = (float)p.getMaxZ(0);
                     for(float z = min_z; z <= max_z; z += vertical_distance)
                     {
-                        point.z = z;
+                        point.z = cellPosWorld.z() + z;
                         point.getVector3fMap() = map2world_affine * point.getVector3fMap();
                         map_pointcloud->push_back(point);
+
+                        Eigen::Vector3d debugPoint(cellPosWorld);
+                        debugPoint.z() += z;
+                        cloud.points.push_back(map2world_affined * debugPoint);
                     }
                 }
             }
         }
     }
+    
+    _debug_map_pointcloud.write(cloud);
     
     if(map_pointcloud->size())
         icp->setInputTarget(map_pointcloud);
@@ -238,6 +253,7 @@ bool Task::configureHook()
 	    RTT::log(RTT::Error) << "Couldn't load inital multi-level surface grid: " << e.what() << RTT::endlog();
 	}
     }
+    gotNewMls = false;
     worldName = _outputFrameName.get();
 
     return true;
@@ -257,11 +273,15 @@ void Task::updateHook()
         env->applyEvents(*binary_event);
     }
     
+    if(gotNewMls)
+    {
+        boost::intrusive_ptr<envire::MLSGrid> mls_grid = env->getItem<envire::MLSGrid>();
+        updateICPModelFromMap(mls_grid.get());
+        gotNewMls = false;
+    }
+    
     new_state = RUNNING;
     TaskBase::updateHook();
-
-    {
-    }
 
     // write state if it has changed
     if(last_state != new_state)

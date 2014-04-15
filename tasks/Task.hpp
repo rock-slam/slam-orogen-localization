@@ -60,6 +60,8 @@ namespace localization {
         std::string bodyName;
         std::string worldName;
 
+        bool gotNewMls;
+        
         /**
          * Computes a pointcloud from a given MLS grid.
          * The incoming sample pointclouds will be aligned to this model pointcould.
