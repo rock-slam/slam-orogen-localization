@@ -131,17 +131,22 @@ void Task::alignPointcloud(const base::Time &ts, const std::vector<Eigen::Vector
 void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr sample_pointcoud, const envire::TransformWithUncertainty& body2odometry)
 {
     if(!icp->getInputTarget().get())
+    {
+        std::cout << "No Input Target" << std::endl;
         return;
-
+    }
     Eigen::Affine3d odometry_delta = last_odometry2body.getTransform() * body2odometry.getTransform();
     Eigen::Affine3d transformation_guess = last_body2world.getTransform() * odometry_delta;
 
     icp->setInputSource(sample_pointcoud);
 
+    std::cout << "Doing ICP match " << std::endl;
+
+    base::Time start = base::Time::now();
     // Perform the alignment
     PCLPointCloud cloud_source_registered;
     icp->align(cloud_source_registered, transformation_guess.matrix().cast<float>());
-    if(icp->hasConverged() && icp->getFitnessScore() <= _max_icp_fitness_score)
+    if(icp->hasConverged() && icp->getFitnessScore() <= _max_icp_fitness_score.get())
     {
         Eigen::Affine3d transformation(icp->getFinalTransformation().cast<double>());
         
@@ -150,15 +155,21 @@ void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr sample_p
         last_body2odometry = body2odometry;
         last_odometry2body = body2odometry.inverse();
         
+        std::cout << "Got new ICP match " << last_body2world.getTransform().translation().transpose() << std::endl;
+        
         //write out current odometry sample
         updatePosition(ts, last_body2odometry.getTransform(), true);
     }
     else
     {
+        std::cout << "ICP failed " << std::endl;
         RTT::log(RTT::Info) << "ICP alignment failed, perhaps a model update is necessary." << RTT::endlog();
         new_state = ICP_ALIGNMENT_FAILED;
     }
+    base::Time end = base::Time::now();
 
+    std::cout << "icp took " << end-start << std::endl;
+}
 
 void Task::updatePosition(const base::Time &curTime, const Eigen::Affine3d &curBody2Odometry, bool write)
 {
@@ -269,6 +280,8 @@ bool Task::startHook()
         return false;
     return true;
 }
+
+
 void Task::updateHook()
 {
     // read envire events
