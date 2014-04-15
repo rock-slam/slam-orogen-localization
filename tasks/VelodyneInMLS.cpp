@@ -45,7 +45,7 @@ void VelodyneInMLS::lidar_samplesTransformerCallback(const base::Time &ts, const
         return;
     }
 
-    if((last_body2odometry.getTransform().inverse() * body2odometry.getTransform()).translation().norm() > _icp_match_interval)
+    if(newICPRunPossible(body2odometry.getTransform()))
     {
         // filter point cloud
         velodyne_lidar::MultilevelLaserScan filtered_lidar_sample;

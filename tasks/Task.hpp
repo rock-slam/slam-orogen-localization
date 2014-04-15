@@ -54,6 +54,7 @@ namespace localization {
         boost::shared_ptr< pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> > icp;
         PCLPointCloudPtr map_pointcloud;
         unsigned max_input_sample_count;
+	base::Time last_icp_match;
         States last_state;
         States new_state;
         
@@ -61,7 +62,12 @@ namespace localization {
         std::string worldName;
 
         bool gotNewMls;
-        
+	
+	/**
+	 * Checks if a new icp run should be made.
+	 */
+        bool newICPRunPossible(const Eigen::Affine3d& body2odometry) const;
+	
         /**
          * Computes a pointcloud from a given MLS grid.
          * The incoming sample pointclouds will be aligned to this model pointcould.

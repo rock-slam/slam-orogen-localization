@@ -21,7 +21,10 @@ task_context "Task" do
     property('max_icp_fitness_score', 'double', 1.0).
         doc 'the maximum fitness score an icp transformation can have to be valid'
     property('icp_match_interval', 'double', 2.0).
-        doc 'odometry delta after which a new icp match is performed'
+        doc 'odometry delta in meter, after which a new icp match is performed'
+    property('icp_match_interval_time', 'double', 1.0).
+        doc 'time in seconds, after which a new icp match is performed'
+
     property('outputFrameName', 'string', 'localization').
         doc 'Name of the frame, of the provided transformations by this component. E.g. body to localization'
 

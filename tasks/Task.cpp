@@ -137,6 +137,7 @@ void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr sample_p
     }
     Eigen::Affine3d odometry_delta = last_odometry2body.getTransform() * body2odometry.getTransform();
     Eigen::Affine3d transformation_guess = last_body2world.getTransform() * odometry_delta;
+    last_icp_match = base::Time::now();
 
     icp->setInputSource(sample_pointcoud);
 
@@ -213,6 +214,13 @@ void Task::computeSampleMask(std::vector<bool>& mask, unsigned pointcloud_size, 
     }
 }
 
+bool Task::newICPRunPossible(const Eigen::Affine3d& body2odometry) const
+{
+    if((last_body2odometry.getTransform().inverse() * body2odometry).translation().norm() > _icp_match_interval || (base::Time::now() - last_icp_match).toSeconds() > _icp_match_interval_time)
+	return true;
+    return false;
+}
+
 
 /// The following lines are template definitions for the various state machine
 // hooks defined by Orocos::RTT. See Task.hpp for more detailed
@@ -231,6 +239,8 @@ bool Task::configureHook()
     last_body2odometry = envire::TransformWithUncertainty::Identity();
     last_odometry2body = envire::TransformWithUncertainty::Identity();
     map2world = envire::TransformWithUncertainty::Identity();
+    
+    last_icp_match.microseconds = 0;
     
     // reset map point cloud
     map_pointcloud.reset(new PCLPointCloud());

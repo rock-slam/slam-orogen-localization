@@ -47,22 +47,25 @@ void PointcloudInMLS::pointcloud_samplesTransformerCallback(const base::Time &ts
         return;
     }
     
-    updatePosition(ts, body2odometry.getTransform(), true);
     
-
-    if(pointcloud2body.matrix() != Eigen::Matrix4d::Identity())
+    if(newICPRunPossible(body2odometry.getTransform()))
     {
-        // apply transformation
-        std::vector<base::Vector3d> transformed_pointcloud;
-        transformed_pointcloud.reserve(pointcloud_samples_sample.points.size());
-        for(std::vector<base::Vector3d>::const_iterator it = pointcloud_samples_sample.points.begin(); it != pointcloud_samples_sample.points.end(); it++)
-        {
-            transformed_pointcloud.push_back(pointcloud2body * (*it));
-        }
-        alignPointcloud(ts, transformed_pointcloud, body2odometry);
+	updatePosition(ts, body2odometry.getTransform(), true);
+	
+	if(pointcloud2body.matrix() != Eigen::Matrix4d::Identity())
+	{
+	    // apply transformation
+	    std::vector<base::Vector3d> transformed_pointcloud;
+	    transformed_pointcloud.reserve(pointcloud_samples_sample.points.size());
+	    for(std::vector<base::Vector3d>::const_iterator it = pointcloud_samples_sample.points.begin(); it != pointcloud_samples_sample.points.end(); it++)
+	    {
+		transformed_pointcloud.push_back(pointcloud2body * (*it));
+	    }
+	    alignPointcloud(ts, transformed_pointcloud, body2odometry);
+	}
+	else
+	    alignPointcloud(ts, pointcloud_samples_sample.points, body2odometry);
     }
-    else
-        alignPointcloud(ts, pointcloud_samples_sample.points, body2odometry);
 }
 
 
