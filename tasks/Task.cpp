@@ -80,6 +80,7 @@ void Task::updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid)
 void Task::alignPointcloud(const std::vector<base::Vector3d>& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry)
 {
     PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
+    pcl_pointcloud->reserve(std::max((u_int64_t)sample_pointcloud.size(), (u_int64_t)max_input_sample_count));
     std::vector<bool> mask;
     computeSampleMask(mask, sample_pointcloud.size(), max_input_sample_count);
     pcl::PointXYZ point;
@@ -97,6 +98,7 @@ void Task::alignPointcloud(const std::vector<base::Vector3d>& sample_pointcloud,
 void Task::alignPointcloud(const std::vector<Eigen::Vector3d>& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry)
 {
     PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
+    pcl_pointcloud->reserve(std::max((u_int64_t)sample_pointcloud.size(), (u_int64_t)max_input_sample_count));
     std::vector<bool> mask;
     computeSampleMask(mask, sample_pointcloud.size(), max_input_sample_count);
     pcl::PointXYZ point;
@@ -126,9 +128,9 @@ void Task::alignPointcloud(const PCLPointCloudPtr sample_pointcoud, const envire
     icp->align(cloud_source_registered, transformation_guess.matrix().cast<float>());
     if(icp->hasConverged() && icp->getFitnessScore() <= _max_icp_fitness_score)
     {
-        Eigen::Affine3f transformation(icp->getFinalTransformation());
+        Eigen::Affine3d transformation(icp->getFinalTransformation().cast<double>());
         
-        last_body2world.setTransform(Eigen::Affine3d(transformation));
+        last_body2world.setTransform(transformation);
 
         last_body2odometry = body2odometry;
         last_odometry2body = body2odometry.inverse();
