@@ -53,12 +53,12 @@ namespace localization {
         boost::shared_ptr<envire::Environment> env;
         boost::shared_ptr< pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> > icp;
         PCLPointCloudPtr map_pointcloud;
-        unsigned max_input_sample_count;
 	base::Time last_icp_match;
         States last_state;
         States new_state;
 	base::samples::Pointcloud model_cloud;
 	base::samples::Pointcloud aligned_cloud;
+	GICPConfiguration gicp_config;
         
         std::string bodyName;
         std::string worldName;

@@ -98,9 +98,9 @@ void Task::alignPointcloud(const base::Time &ts, const std::vector<base::Vector3
     aligned_cloud.points = sample_pointcloud;
     aligned_cloud.colors.resize(sample_pointcloud.size(), base::Vector4d(1.0, 0.0, 0.0, 1.0));
     PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
-    pcl_pointcloud->reserve(std::max((u_int64_t)sample_pointcloud.size(), (u_int64_t)max_input_sample_count));
+    pcl_pointcloud->reserve(std::max((u_int64_t)sample_pointcloud.size(), (u_int64_t)gicp_config.max_input_sample_count));
     std::vector<bool> mask;
-    computeSampleMask(mask, sample_pointcloud.size(), max_input_sample_count);
+    computeSampleMask(mask, sample_pointcloud.size(), gicp_config.max_input_sample_count);
     pcl::PointXYZ point;
     for(unsigned i = 0; i < sample_pointcloud.size(); i++)
     {
@@ -118,9 +118,9 @@ void Task::alignPointcloud(const base::Time &ts, const std::vector<Eigen::Vector
     aligned_cloud.points.clear();
     aligned_cloud.colors.resize(sample_pointcloud.size(), base::Vector4d(1.0, 0.0, 0.0, 1.0));
     PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
-    pcl_pointcloud->reserve(std::max((u_int64_t)sample_pointcloud.size(), (u_int64_t)max_input_sample_count));
+    pcl_pointcloud->reserve(std::max((u_int64_t)sample_pointcloud.size(), (u_int64_t)gicp_config.max_input_sample_count));
     std::vector<bool> mask;
-    computeSampleMask(mask, sample_pointcloud.size(), max_input_sample_count);
+    computeSampleMask(mask, sample_pointcloud.size(), gicp_config.max_input_sample_count);
     pcl::PointXYZ point;
     for(unsigned i = 0; i < sample_pointcloud.size(); i++)
     {
@@ -153,7 +153,7 @@ void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr sample_p
     // Perform the alignment
     PCLPointCloud cloud_source_registered;
     icp->align(cloud_source_registered, transformation_guess.matrix().cast<float>());
-    if(icp->hasConverged() && icp->getFitnessScore() <= _max_icp_fitness_score.get())
+    if(icp->hasConverged() && icp->getFitnessScore() <= gicp_config.max_mean_square_error)
     {
         Eigen::Affine3d transformation(icp->getFinalTransformation().cast<double>());
         
@@ -236,7 +236,7 @@ void Task::computeSampleMask(std::vector<bool>& mask, unsigned pointcloud_size, 
 
 bool Task::newICPRunPossible(const Eigen::Affine3d& body2odometry) const
 {
-    if((last_body2odometry.getTransform().inverse() * body2odometry).translation().norm() > _icp_match_interval || (base::Time::now() - last_icp_match).toSeconds() > _icp_match_interval_time)
+    if((last_body2odometry.getTransform().inverse() * body2odometry).translation().norm() > gicp_config.icp_match_interval || (base::Time::now() - last_icp_match).toSeconds() > gicp_config.icp_match_interval_time)
 	return true;
     return false;
 }
@@ -270,16 +270,16 @@ bool Task::configureHook()
     env->addEventHandler(new MLSEventHandler(this));
 
     // set icp config
+    gicp_config = _gicp_configuration.get();
     icp.reset(new pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ>());
-    icp->setMaxCorrespondenceDistance(2.5);
-    icp->setMaximumIterations(50);
-    icp->setTransformationEpsilon(1e-5);
-    icp->setEuclideanFitnessEpsilon(1.0);
-    icp->setCorrespondenceRandomness(20);
-    icp->setMaximumOptimizerIterations(20);
-    icp->setRotationEpsilon(2e-3);
-    max_input_sample_count = 10000;
-
+    icp->setMaxCorrespondenceDistance(gicp_config.max_correspondence_distance);
+    icp->setMaximumIterations(gicp_config.maximum_iterations);
+    icp->setTransformationEpsilon(gicp_config.transformation_epsilon);
+    icp->setEuclideanFitnessEpsilon(gicp_config.euclidean_fitness_epsilon);
+    icp->setCorrespondenceRandomness(gicp_config.correspondence_randomness);
+    icp->setMaximumOptimizerIterations(gicp_config.maximum_optimizer_iterations);
+    icp->setRotationEpsilon(gicp_config.rotation_epsilon);
+    
     // load inital environment
     if(!_environment_path.get().empty())
     {
