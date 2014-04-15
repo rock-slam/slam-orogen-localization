@@ -27,7 +27,7 @@ namespace localization {
     protected:
 
         virtual void lidar_samplesTransformerCallback(const base::Time &ts, const ::velodyne_lidar::MultilevelLaserScan &lidar_samples_sample);
-
+        void odometryCallback(base::Time ts);
     public:
         /** TaskContext constructor for VelodyneInMLS
          * \param name Name of the task. This name needs to be unique to make it identifiable via nameservices.

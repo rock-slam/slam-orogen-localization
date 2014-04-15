@@ -22,14 +22,13 @@ task_context "Task" do
         doc 'the maximum fitness score an icp transformation can have to be valid'
     property('icp_match_interval', 'double', 2.0).
         doc 'odometry delta after which a new icp match is performed'
+    property('outputFrameName', 'string', 'localization').
+        doc 'Name of the frame, of the provided transformations by this component. E.g. body to localization'
 
     ## input ports
     input_port('envire_map', ro_ptr('std/vector</envire/BinaryEvent>')).
         needs_reliable_connection.
         doc 'the envire map'
-        
-    input_port('odometry_samples', '/base/samples/RigidBodyState').
-        doc 'odometry samples'
         
     ## output ports
     output_port('pose_samples', '/base/samples/RigidBodyState').

@@ -19,6 +19,15 @@ VelodyneInMLS::~VelodyneInMLS()
 {
 }
 
+void VelodyneInMLS::odometryCallback(base::Time ts)
+{
+    Eigen::Affine3d body2Odometry;
+    if(!_body2odometry.get(ts, body2Odometry, false))
+        return;
+
+    updatePosition(ts, body2Odometry);
+}
+
 void VelodyneInMLS::lidar_samplesTransformerCallback(const base::Time &ts, const ::velodyne_lidar::MultilevelLaserScan &lidar_samples_sample)
 {
     Eigen::Affine3d laser2body;
@@ -59,6 +68,10 @@ bool VelodyneInMLS::configureHook()
 {
     if (! VelodyneInMLSBase::configureHook())
         return false;
+    
+    bodyName = _body_frame.get();
+    _body2odometry.registerUpdateCallback(boost::bind(&VelodyneInMLS::odometryCallback, this, _1));
+    
     return true;
 }
 bool VelodyneInMLS::startHook()

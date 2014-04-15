@@ -27,7 +27,7 @@ namespace localization {
     protected:
 
         virtual void pointcloud_samplesTransformerCallback(const base::Time &ts, const ::base::samples::Pointcloud &pointcloud_samples_sample);
-
+        void odometryCallback(base::Time ts);
     public:
         /** TaskContext constructor for PointcloudInMLS
          * \param name Name of the task. This name needs to be unique to make it identifiable via nameservices.

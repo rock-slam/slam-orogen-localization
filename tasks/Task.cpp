@@ -5,12 +5,12 @@
 using namespace localization;
 
 Task::Task(std::string const& name)
-    : TaskBase(name)
+    : TaskBase(name), bodyName("body"), worldName("world")
 {
 }
 
 Task::Task(std::string const& name, RTT::ExecutionEngine* engine)
-    : TaskBase(name, engine)
+    : TaskBase(name, engine), bodyName("body"), worldName("world")
 {
 }
 
@@ -141,6 +141,22 @@ void Task::alignPointcloud(const PCLPointCloudPtr sample_pointcoud, const envire
         new_state = ICP_ALIGNMENT_FAILED;
     }
 
+
+void Task::updatePosition(const base::Time &curTime, const Eigen::Affine3d &curBody2Odometry, bool write)
+{
+    if(!write)
+        return;
+    
+    //comput delta between odometry position at the time of the last ICP match and the current odometry position
+    Eigen::Affine3d curBody2BodyICP = last_odometry2body.getTransform() * curBody2Odometry;
+//     Eigen::Affine3d odometry_delta = last_odometry2body.getTransform() * curBody2Odometry;
+    base::samples::RigidBodyState sample_out;
+    sample_out.invalidate();
+    sample_out.time = curTime;
+    sample_out.setTransform(last_body2world.getTransform() * curBody2BodyICP);
+    sample_out.sourceFrame = bodyName;
+    sample_out.targetFrame = worldName;
+    _pose_samples.write(sample_out);
 }
 
 void Task::computeSampleMask(std::vector<bool>& mask, unsigned pointcloud_size, unsigned samples_count)
@@ -222,6 +238,7 @@ bool Task::configureHook()
 	    RTT::log(RTT::Error) << "Couldn't load inital multi-level surface grid: " << e.what() << RTT::endlog();
 	}
     }
+    worldName = _outputFrameName.get();
 
     return true;
 }
@@ -243,13 +260,7 @@ void Task::updateHook()
     new_state = RUNNING;
     TaskBase::updateHook();
 
-    // write adjusted pose
-    base::samples::RigidBodyState odometry_sample;
-    if(_odometry_samples.readNewest(odometry_sample) == RTT::NewData)
     {
-        Eigen::Affine3d odometry_delta = last_odometry2body.getTransform() * odometry_sample.getTransform();
-        odometry_sample.setTransform(last_body2world.getTransform() * odometry_delta);
-        _pose_samples.write(odometry_sample);
     }
 
     // write state if it has changed

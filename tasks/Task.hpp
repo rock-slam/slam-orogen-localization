@@ -56,6 +56,9 @@ namespace localization {
         unsigned max_input_sample_count;
         States last_state;
         States new_state;
+        
+        std::string bodyName;
+        std::string worldName;
 
         /**
          * Computes a pointcloud from a given MLS grid.
@@ -76,6 +79,10 @@ namespace localization {
          */
         void computeSampleMask(std::vector<bool>& mask, unsigned pointcloud_size, unsigned samples_count);
 
+        /**
+         * Updates the current position using the given odometry reading
+         * */
+        void updatePosition(const base::Time &curTime, const Eigen::Affine3d &curBody2Odometry, bool write = false);
     public:
         /** TaskContext constructor for Task
          * \param name Name of the task. This name needs to be unique to make it identifiable via nameservices.

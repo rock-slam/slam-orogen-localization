@@ -20,6 +20,16 @@ PointcloudInMLS::~PointcloudInMLS()
 {
 }
 
+void PointcloudInMLS::odometryCallback(base::Time ts)
+{
+    Eigen::Affine3d body2Odometry;
+    if(!_body2odometry.get(ts, body2Odometry, false))
+        return;
+
+    updatePosition(ts, body2Odometry);
+}
+
+
 void PointcloudInMLS::pointcloud_samplesTransformerCallback(const base::Time &ts, const ::base::samples::Pointcloud &pointcloud_samples_sample)
 {
     Eigen::Affine3d pointcloud2body;
@@ -61,6 +71,10 @@ bool PointcloudInMLS::configureHook()
 {
     if (! PointcloudInMLSBase::configureHook())
         return false;
+    
+    bodyName = _body_frame.get();
+    _body2odometry.registerUpdateCallback(boost::bind(&PointcloudInMLS::odometryCallback, this, _1));
+    
     return true;
 }
 bool PointcloudInMLS::startHook()
