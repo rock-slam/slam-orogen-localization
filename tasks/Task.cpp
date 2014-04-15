@@ -245,6 +245,8 @@ bool Task::configureHook()
 	    if(!inital_env.get())
 		throw std::runtime_error("couldn't load inital environment.");
 	    boost::intrusive_ptr<envire::MLSGrid> mls_grid = inital_env->getItem<envire::MLSGrid>();
+            if(!mls_grid)
+                throw std::runtime_error("Initial environment did not contain a mls");
 	    updateICPModelFromMap(mls_grid.get());
 	    RTT::log(RTT::Info) << "Successfully loaded inital multi-level surface grid." << RTT::endlog();
 	}
