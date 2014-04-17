@@ -90,7 +90,12 @@ void Task::updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid)
     _debug_map_pointcloud.write(model_cloud);
     
     if(map_pointcloud->size())
-        icp->setInputTarget(map_pointcloud);
+    {
+	PCLPointCloudPtr target_pointcloud(new PCLPointCloud());
+	target_pointcloud->points = map_pointcloud->points;
+        icp->setInputTarget(target_pointcloud);
+    }
+
 }
 
 void Task::alignPointcloud(const base::Time &ts, const std::vector<base::Vector3d>& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry)
@@ -146,18 +151,27 @@ void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr sample_p
     last_icp_match = base::Time::now();
 
     icp->setInputSource(sample_pointcoud);
+    
+    /** stupid way to fix a pcl bug */
+    for(unsigned i = 0; i < icp->target_->size(); i++)
+    {
+	pcl::PointXYZ& point = const_cast<pcl::PointXYZ&>(icp->target_->at(i));
+	point.getVector3fMap() = transformation_guess.inverse().cast<float>() * map_pointcloud->at(i).getVector3fMap();
+    }
+    icp->tree_->setInputCloud(icp->target_);
+    /** ** */
 
     std::cout << "Doing ICP match " << std::endl;
 
     base::Time start = base::Time::now();
     // Perform the alignment
     PCLPointCloud cloud_source_registered;
-    icp->align(cloud_source_registered, transformation_guess.matrix().cast<float>());
+    icp->align(cloud_source_registered);//, transformation_guess.matrix().cast<float>());
     if(icp->hasConverged() && icp->getFitnessScore() <= gicp_config.max_mean_square_error)
     {
         Eigen::Affine3d transformation(icp->getFinalTransformation().cast<double>());
         
-        last_body2world.setTransform(transformation);
+        last_body2world.setTransform(transformation_guess * transformation);
 
         last_body2odometry = body2odometry;
         last_odometry2body = body2odometry.inverse();
