@@ -6,6 +6,7 @@
   <license></license>
   <url>http://</url>
   <logo>http://</logo>
+  <depend package="drivers/orogen/transformer" />
   <depend package="base/cmake" />
   <depend package="slam/orogen/envire" />
   <depend package="slam/envire" />
