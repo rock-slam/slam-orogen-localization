@@ -7,6 +7,23 @@
 
 namespace localization {
 
+    class PointcloudWithPose
+    {
+    public:
+        EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+        PointcloudWithPose()
+        {}
+        
+        PointcloudWithPose(const base::Time &ts, const ::base::samples::Pointcloud &pc, const Eigen::Affine3d &pointcloud2body, envire::TransformWithUncertainty &body2odometry) 
+        : time(ts), pointcloud_sample(pc), pointcloud2body(pointcloud2body), body2odometry(body2odometry)
+        {
+        }
+        base::Time time;
+        ::base::samples::Pointcloud pointcloud_sample;
+        Eigen::Affine3d pointcloud2body;
+        envire::TransformWithUncertainty body2odometry;
+    };
+    
     /*! \class PointcloudInMLS 
      * \brief The task context provides and requires services. It uses an ExecutionEngine to perform its functions.
      * Essential interfaces are operations, data flow ports and properties. These interfaces have been defined using the oroGen specification.
@@ -26,9 +43,13 @@ namespace localization {
 	friend class PointcloudInMLSBase;
     protected:
 
+        PointcloudWithPose pc;
+        bool hasNewPointCloud;
+        
         virtual void pointcloud_samplesTransformerCallback(const base::Time &ts, const ::base::samples::Pointcloud &pointcloud_samples_sample);
         void odometryCallback(base::Time ts);
     public:
+        EIGEN_MAKE_ALIGNED_OPERATOR_NEW
         /** TaskContext constructor for PointcloudInMLS
          * \param name Name of the task. This name needs to be unique to make it identifiable via nameservices.
          * \param initial_state The initial TaskState of the TaskContext. Default is Stopped state.

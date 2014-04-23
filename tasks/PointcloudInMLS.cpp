@@ -47,24 +47,11 @@ void PointcloudInMLS::pointcloud_samplesTransformerCallback(const base::Time &ts
         return;
     }
     
-    
     if(newICPRunPossible(body2odometry.getTransform()))
     {
-	updatePosition(ts, body2odometry.getTransform(), true);
-	
-	if(pointcloud2body.matrix() != Eigen::Matrix4d::Identity())
-	{
-	    // apply transformation
-	    std::vector<base::Vector3d> transformed_pointcloud;
-	    transformed_pointcloud.reserve(pointcloud_samples_sample.points.size());
-	    for(std::vector<base::Vector3d>::const_iterator it = pointcloud_samples_sample.points.begin(); it != pointcloud_samples_sample.points.end(); it++)
-	    {
-		transformed_pointcloud.push_back(pointcloud2body * (*it));
-	    }
-	    alignPointcloud(ts, transformed_pointcloud, body2odometry);
-	}
-	else
-	    alignPointcloud(ts, pointcloud_samples_sample.points, body2odometry);
+        //save pointcloud for processing later on
+        pc = PointcloudWithPose(ts, pointcloud_samples_sample, pointcloud2body, body2odometry);
+        hasNewPointCloud = true;
     }
 }
 
@@ -91,7 +78,28 @@ bool PointcloudInMLS::startHook()
 }
 void PointcloudInMLS::updateHook()
 {
+    //process all callbacks
     PointcloudInMLSBase::updateHook();
+
+    //if we got a new pointcloud, perform alignment on the latest one
+    if(hasNewPointCloud)
+    {
+        if(!pc.pointcloud2body.matrix().isApprox(Eigen::Matrix4d::Identity()))
+        {
+            // apply transformation
+            std::vector<base::Vector3d> transformed_pointcloud;
+            transformed_pointcloud.reserve(pc.pointcloud_sample.points.size());
+            for(std::vector<base::Vector3d>::const_iterator it = pc.pointcloud_sample.points.begin(); it != pc.pointcloud_sample.points.end(); it++)
+            {
+                transformed_pointcloud.push_back(pc.pointcloud2body * (*it));
+            }
+            alignPointcloud(pc.time, transformed_pointcloud, pc.body2odometry);
+        }
+        else
+            alignPointcloud(pc.time, pc.pointcloud_sample.points, pc.body2odometry); 
+        
+        hasNewPointCloud = false;
+    }
 }
 void PointcloudInMLS::errorHook()
 {
