@@ -2,9 +2,20 @@
 #define GRAPH_SLAM_TASK_CONFIG_HPP_
 
 #include <string>
+#include <base/Time.hpp>
+#include <base/Pose.hpp>
 
 namespace localization
 {
+    
+struct PoseProviderUpdate
+{
+    base::Time time;
+    base::Pose body2world;
+    base::Pose body2odometry;
+    
+    PoseProviderUpdate() :time(base::Time::now()) {}
+};
 
 struct GICPConfiguration
 {
