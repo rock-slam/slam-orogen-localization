@@ -112,5 +112,5 @@ task_context "PoseProvider" do
         doc 'timestamped samples of the current pose of the robot.'
 
 
-    port_driven 'odometry_samples'
+    port_driven
 end
