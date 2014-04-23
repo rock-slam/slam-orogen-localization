@@ -28,6 +28,7 @@ namespace localization {
 	
 	Eigen::Affine3d last_odometry2body;
         Eigen::Affine3d last_body2world;
+	bool have_valid_pose;
 
     public:
         /** TaskContext constructor for PoseProvider
