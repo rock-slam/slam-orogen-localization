@@ -169,6 +169,7 @@ void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr sample_p
     icp->align(cloud_source_registered);//, transformation_guess.matrix().cast<float>());
     if(icp->hasConverged() && icp->getFitnessScore() <= gicp_config.max_mean_square_error)
     {
+	new_state = RUNNING;
         Eigen::Affine3d transformation(icp->getFinalTransformation().cast<double>());
         
         last_body2world.setTransform(transformation_guess * transformation);
@@ -346,7 +347,6 @@ void Task::updateHook()
         gotNewMls = false;
     }
     
-    new_state = RUNNING;
     TaskBase::updateHook();
 
     // write state if it has changed
