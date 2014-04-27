@@ -236,9 +236,12 @@ void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr sample_p
     // Perform the alignment
     PCLPointCloud cloud_source_registered;
     icp->align(cloud_source_registered);//, transformation_guess.matrix().cast<float>());
-    if(icp->hasConverged() && icp->getFitnessScore() <= gicp_config.max_mean_square_error)
+    double fitness_score = icp->getFitnessScore();
+    if(icp->hasConverged() && fitness_score <= gicp_config.max_mean_square_error)
     {
 	new_state = RUNNING;
+	RTT::log(RTT::Error) << "ICP alignment successful. FitnessScore: " << fitness_score<< RTT::endlog();
+	
         Eigen::Affine3d transformation(icp->getFinalTransformation().cast<double>());
         
         last_body2world.setTransform(transformation_guess * transformation);
@@ -256,7 +259,7 @@ void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr sample_p
     else
     {
         std::cout << "ICP failed " << std::endl;
-        RTT::log(RTT::Info) << "ICP alignment failed, perhaps a model update is necessary." << RTT::endlog();
+        RTT::log(RTT::Error) << "ICP alignment failed, perhaps a model update is necessary. FitnessScore: " << fitness_score << RTT::endlog();
         new_state = ICP_ALIGNMENT_FAILED;
 	icp_debug.failed_alignments++;
     }
