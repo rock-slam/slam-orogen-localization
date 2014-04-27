@@ -62,6 +62,7 @@ namespace localization {
 	base::samples::Pointcloud model_cloud;
 	base::samples::Pointcloud aligned_cloud;
 	GICPConfiguration gicp_config;
+	ICPDebugInformation icp_debug;
         
         std::string bodyName;
         std::string worldName;

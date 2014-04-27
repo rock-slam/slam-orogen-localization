@@ -22,7 +22,7 @@ task_context "Task" do
     property('gicp_configuration', '/localization/GICPConfiguration').
 	doc 'configuration parameters of gicp'
     property('convert_pc_to_mls', 'bool', false).
-	doc ''
+	doc 'convert input pointcloud to mls befor processing'
 
     property('outputFrameName', 'string', 'localization').
         doc 'Name of the frame, of the provided transformations by this component. E.g. body to localization'
@@ -43,6 +43,9 @@ task_context "Task" do
 
     output_port('debug_map_pointcloud', 'base::samples::Pointcloud').
         doc 'Pointcloud generated from the input mls map'
+
+    output_port('icp_debug_information', '/localization/ICPDebugInformation').
+	doc 'icp debug information'
 
     ## states
     runtime_states :MISSING_TRANSFORMATION, :ICP_ALIGNMENT_FAILED

@@ -247,6 +247,8 @@ void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr sample_p
         last_odometry2body = body2odometry.inverse();
         
         std::cout << "Got new ICP match " << last_body2world.getTransform().translation().transpose() << std::endl;
+	
+	icp_debug.successful_alignments++;
         
         //write out current odometry sample
         updatePosition(ts, last_body2odometry.getTransform(), true);
@@ -256,8 +258,13 @@ void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr sample_p
         std::cout << "ICP failed " << std::endl;
         RTT::log(RTT::Info) << "ICP alignment failed, perhaps a model update is necessary." << RTT::endlog();
         new_state = ICP_ALIGNMENT_FAILED;
+	icp_debug.failed_alignments++;
     }
     base::Time end = base::Time::now();
+    
+    icp_debug.time = ts;
+    icp_debug.last_fitness_score = fitness_score;
+    _icp_debug_information.write(icp_debug);
 
     std::cout << "icp took " << end-start << std::endl;
     

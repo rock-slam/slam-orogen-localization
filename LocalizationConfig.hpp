@@ -7,6 +7,15 @@
 
 namespace localization
 {
+
+struct ICPDebugInformation
+{
+    base::Time time;
+    int successful_alignments;
+    int failed_alignments;
+    double last_fitness_score;
+    ICPDebugInformation() : time(base::Time::now()), successful_alignments(0), failed_alignments(0), last_fitness_score(-1.0) {}
+};
     
 struct PoseProviderUpdate
 {
