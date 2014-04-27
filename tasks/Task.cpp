@@ -30,16 +30,13 @@ void MLSEventHandler::handle( const envire::Event& event )
     }
 }
 
-
-void Task::updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid)
+void Task::createPointcloudFromMLS(PCLPointCloudPtr pointcloud, envire::MultiLevelSurfaceGrid* mls_grid)
 {
-    map_pointcloud->clear();
-    Eigen::Affine3f map2world_affine(map2world.getTransform());
+    pointcloud->clear();
+    
     float vertical_distance = (mls_grid->getScaleX() + mls_grid->getScaleY()) * 0.5;
     if(vertical_distance <= 0.0)
         vertical_distance = 0.1;
-
-    Eigen::Affine3d map2world_affined(map2world.getTransform());
     
     // create pointcloud from mls
     for(size_t x=0;x<mls_grid->getCellSizeX();x++)
@@ -58,12 +55,7 @@ void Task::updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid)
                 if(p.isHorizontal())
                 {
                     point.z = cellPosWorld.z() + p.mean;
-                    point.getVector3fMap() = map2world_affine * point.getVector3fMap();
-                    map_pointcloud->push_back(point);
-                    
-                    Eigen::Vector3d debugPoint(cellPosWorld);
-                    debugPoint.z() += p.mean;
-                    model_cloud.points.push_back(map2world_affined * debugPoint);
+                    pointcloud->push_back(point);
                 }
                 else if(p.isVertical())
                 {
@@ -72,20 +64,27 @@ void Task::updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid)
                     for(float z = min_z; z <= max_z; z += vertical_distance)
                     {
                         point.z = cellPosWorld.z() + z;
-                        point.getVector3fMap() = map2world_affine * point.getVector3fMap();
-                        map_pointcloud->push_back(point);
-
-                        Eigen::Vector3d debugPoint(cellPosWorld);
-                        debugPoint.z() += z;
-                        model_cloud.points.push_back(map2world_affined * debugPoint);
+                        pointcloud->push_back(point);
                     }
                 }
             }
         }
     }
+}
+
+void Task::updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid)
+{
+    map_pointcloud->clear();
+    Eigen::Affine3f map2world_affine(map2world.getTransform());
     
-    for(unsigned i = 0; i < model_cloud.points.size(); i++)
+    createPointcloudFromMLS(map_pointcloud, mls_grid);
+    
+    for(unsigned i = 0; i < map_pointcloud->size(); i++)
+    {
+	map_pointcloud->at(i).getVector3fMap() = map2world_affine * map_pointcloud->at(i).getVector3fMap();
+	model_cloud.points.push_back(map_pointcloud->at(i).getVector3fMap().cast<double>());
 	model_cloud.colors.push_back(base::Vector4d(0.0, 1.0, 0.0, 1.0));
+    }
     
     _debug_map_pointcloud.write(model_cloud);
     
@@ -98,24 +97,89 @@ void Task::updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid)
 
 }
 
+void Task::alignPointcloudAsMLS(const base::Time& ts, const std::vector< base::Vector3d >& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry)
+{
+    if(sample_pointcloud.size() == 0)
+	return;
+    if(pointcloud_env.use_count() == 0)
+    {
+	pointcloud_env.reset(new envire::Environment());
+	pointcloud_projection.reset(new envire::MLSProjection());
+	pointcloud_projection->useNegativeInformation(false);
+	pointcloud_projection->useUncertainty(true);
+	double grid_size = 200.0;
+	double cell_resolution = 0.1;
+	double grid_count = grid_size / cell_resolution;
+	envire::MultiLevelSurfaceGrid* pointcloud_grid = new envire::MultiLevelSurfaceGrid(grid_count, grid_count, cell_resolution, cell_resolution, -0.5 * grid_size, -0.5 * grid_size);
+	pointcloud_grid->getConfig().updateModel = envire::MLSConfiguration::KALMAN;
+	pointcloud_grid->getConfig().gapSize = 0.5;
+	pointcloud_grid->getConfig().thickness = 0.05;
+	pointcloud_env->attachItem(pointcloud_grid, pointcloud_env->getRootNode());
+	pointcloud_env->addOutput(pointcloud_projection.get(), pointcloud_grid);
+    }
+    
+    // create envire pointcloud
+    envire::Pointcloud* pc = new envire::Pointcloud();
+    pc->vertices.reserve(sample_pointcloud.size());
+    for(unsigned i = 0; i < sample_pointcloud.size(); i++)
+	pc->vertices.push_back(sample_pointcloud[i]);
+    
+    // update mls
+    envire::MLSGrid* grid = pointcloud_projection->getOutput<envire::MLSGrid*>();
+    if(!grid)
+    {
+	RTT::log(RTT::Error) << "Missing mls grid in pointcloud environment." << RTT::endlog();
+	return;
+    }
+    grid->clear();
+    pointcloud_env->attachItem(pc, pointcloud_env->getRootNode());
+    pointcloud_env->addInput(pointcloud_projection.get(), pc);
+    pointcloud_projection->updateAll();
+        
+    // remove inputs
+    pointcloud_env->removeInput(pointcloud_projection.get(), pc);
+    pointcloud_env->detachItem(pc);
+
+    // create pointcloud from mls_grid
+    PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
+    createPointcloudFromMLS(pcl_pointcloud, grid);
+    
+    // create debug pointcloud
+    aligned_cloud.points.clear();
+    aligned_cloud.points.reserve(pcl_pointcloud->size());
+    for(unsigned i = 0; i < pcl_pointcloud->size(); i++)
+    {
+	Eigen::Vector3f point = pcl_pointcloud->at(i).getVector3fMap();
+    	aligned_cloud.points.push_back(base::Vector3d(point.x(), point.y(), point.z()));
+    }
+    aligned_cloud.colors.resize(aligned_cloud.points.size(), base::Vector4d(1.0, 0.0, 0.0, 1.0));
+    
+    alignPointcloud(ts, pcl_pointcloud, body2odometry);
+}
+
 void Task::alignPointcloud(const base::Time &ts, const std::vector<base::Vector3d>& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry)
 {
-    aligned_cloud.points = sample_pointcloud;
-    aligned_cloud.colors.resize(sample_pointcloud.size(), base::Vector4d(1.0, 0.0, 0.0, 1.0));
-    PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
-    pcl_pointcloud->reserve(std::max((u_int64_t)sample_pointcloud.size(), (u_int64_t)gicp_config.max_input_sample_count));
-    std::vector<bool> mask;
-    computeSampleMask(mask, sample_pointcloud.size(), gicp_config.max_input_sample_count);
-    pcl::PointXYZ point;
-    for(unsigned i = 0; i < sample_pointcloud.size(); i++)
+    if(_convert_pc_to_mls.get())
+	alignPointcloudAsMLS(ts, sample_pointcloud, body2odometry);
+    else
     {
-        if(mask[i])
-        {
-            point.getVector3fMap() = sample_pointcloud[i].cast<float>();
-            pcl_pointcloud->push_back(point);
-        }
+	aligned_cloud.points = sample_pointcloud;
+	aligned_cloud.colors.resize(sample_pointcloud.size(), base::Vector4d(1.0, 0.0, 0.0, 1.0));
+	PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
+	pcl_pointcloud->reserve(std::max((u_int64_t)sample_pointcloud.size(), (u_int64_t)gicp_config.max_input_sample_count));
+	std::vector<bool> mask;
+	computeSampleMask(mask, sample_pointcloud.size(), gicp_config.max_input_sample_count);
+	pcl::PointXYZ point;
+	for(unsigned i = 0; i < sample_pointcloud.size(); i++)
+	{
+	    if(mask[i])
+	    {
+		point.getVector3fMap() = sample_pointcloud[i].cast<float>();
+		pcl_pointcloud->push_back(point);
+	    }
+	}
+	alignPointcloud(ts, pcl_pointcloud, body2odometry);
     }
-    alignPointcloud(ts, pcl_pointcloud, body2odometry);
 }
 
 void Task::alignPointcloud(const base::Time &ts, const std::vector<Eigen::Vector3d>& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry)
@@ -141,6 +205,11 @@ void Task::alignPointcloud(const base::Time &ts, const std::vector<Eigen::Vector
 
 void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr sample_pointcoud, const envire::TransformWithUncertainty& body2odometry)
 {
+    if(sample_pointcoud->empty())
+    {
+        std::cout << "Input cloud is empty" << std::endl;
+        return;
+    }
     if(!icp->getInputTarget().get())
     {
         std::cout << "No Input Target" << std::endl;
@@ -287,6 +356,8 @@ bool Task::configureHook()
     // setup environment
     env.reset(new envire::Environment());
     env->addEventHandler(new MLSEventHandler(this));
+    pointcloud_env.reset();
+    pointcloud_projection.reset();
 
     // set icp config
     gicp_config = _gicp_configuration.get();

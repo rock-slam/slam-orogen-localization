@@ -10,6 +10,7 @@
 #include <envire/maps/MLSGrid.hpp>
 #include <boost/shared_ptr.hpp>
 #include <pcl/registration/gicp.h>
+#include <envire/operators/MLSProjection.hpp>
 
 namespace localization {
 
@@ -51,6 +52,8 @@ namespace localization {
         envire::TransformWithUncertainty last_body2world;
         envire::TransformWithUncertainty map2world;
         boost::shared_ptr<envire::Environment> env;
+	boost::shared_ptr<envire::Environment> pointcloud_env;
+	boost::shared_ptr<envire::MLSProjection> pointcloud_projection;
         boost::shared_ptr< pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> > icp;
         PCLPointCloudPtr map_pointcloud;
 	base::Time last_icp_match;
@@ -64,6 +67,11 @@ namespace localization {
         std::string worldName;
 
         bool gotNewMls;
+	
+	/**
+	 * Creates a pcl pointcloud from a mls map
+	 */
+	void createPointcloudFromMLS(PCLPointCloudPtr pointcloud, envire::MultiLevelSurfaceGrid* mls_grid);
 	
 	/**
 	 * Checks if a new icp run should be made.
@@ -83,6 +91,7 @@ namespace localization {
         void alignPointcloud(const base::Time& ts, const std::vector< base::Vector3d >& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry);
         void alignPointcloud(const base::Time& ts, const std::vector< Eigen::Vector3d >& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry);
         void alignPointcloud(const base::Time& ts, const PCLPointCloudPtr sample_pointcoud, const envire::TransformWithUncertainty& body2odometry);
+	void alignPointcloudAsMLS(const base::Time& ts, const std::vector< base::Vector3d >& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry);
 
         /**
          * Creates a mask to sub sample a pointcloud.

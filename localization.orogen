@@ -21,6 +21,8 @@ task_context "Task" do
     # icp configuration
     property('gicp_configuration', '/localization/GICPConfiguration').
 	doc 'configuration parameters of gicp'
+    property('convert_pc_to_mls', 'bool', false).
+	doc ''
 
     property('outputFrameName', 'string', 'localization').
         doc 'Name of the frame, of the provided transformations by this component. E.g. body to localization'
