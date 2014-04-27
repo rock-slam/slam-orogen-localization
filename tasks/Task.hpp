@@ -52,8 +52,6 @@ namespace localization {
         envire::TransformWithUncertainty last_body2world;
         envire::TransformWithUncertainty map2world;
         boost::shared_ptr<envire::Environment> env;
-	boost::shared_ptr<envire::Environment> pointcloud_env;
-	boost::shared_ptr<envire::MLSProjection> pointcloud_projection;
         boost::shared_ptr< pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> > icp;
         PCLPointCloudPtr map_pointcloud;
 	base::Time last_icp_match;

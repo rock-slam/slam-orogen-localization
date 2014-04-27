@@ -103,22 +103,20 @@ void Task::alignPointcloudAsMLS(const base::Time& ts, const std::vector< base::V
 {
     if(sample_pointcloud.size() == 0)
 	return;
-    if(pointcloud_env.use_count() == 0)
-    {
-	pointcloud_env.reset(new envire::Environment());
-	pointcloud_projection.reset(new envire::MLSProjection());
-	pointcloud_projection->useNegativeInformation(false);
-	pointcloud_projection->useUncertainty(true);
-	double grid_size = 200.0;
-	double cell_resolution = 0.1;
-	double grid_count = grid_size / cell_resolution;
-	envire::MultiLevelSurfaceGrid* pointcloud_grid = new envire::MultiLevelSurfaceGrid(grid_count, grid_count, cell_resolution, cell_resolution, -0.5 * grid_size, -0.5 * grid_size);
-	pointcloud_grid->getConfig().updateModel = envire::MLSConfiguration::KALMAN;
-	pointcloud_grid->getConfig().gapSize = 0.5;
-	pointcloud_grid->getConfig().thickness = 0.05;
-	pointcloud_env->attachItem(pointcloud_grid, pointcloud_env->getRootNode());
-	pointcloud_env->addOutput(pointcloud_projection.get(), pointcloud_grid);
-    }
+    boost::shared_ptr<envire::Environment> pointcloud_env;
+    pointcloud_env.reset(new envire::Environment());
+    envire::MLSProjection* pointcloud_projection = new envire::MLSProjection();
+    pointcloud_projection->useNegativeInformation(false);
+    pointcloud_projection->useUncertainty(true);
+    double grid_size = 200.0;
+    double cell_resolution = 0.1;
+    double grid_count = grid_size / cell_resolution;
+    envire::MultiLevelSurfaceGrid* pointcloud_grid = new envire::MultiLevelSurfaceGrid(grid_count, grid_count, cell_resolution, cell_resolution, -0.5 * grid_size, -0.5 * grid_size);
+    pointcloud_grid->getConfig().updateModel = envire::MLSConfiguration::KALMAN;
+    pointcloud_grid->getConfig().gapSize = 0.5;
+    pointcloud_grid->getConfig().thickness = 0.05;
+    pointcloud_env->attachItem(pointcloud_grid, pointcloud_env->getRootNode());
+    pointcloud_env->addOutput(pointcloud_projection, pointcloud_grid);
     
     // create envire pointcloud
     envire::Pointcloud* pc = new envire::Pointcloud();
@@ -135,11 +133,11 @@ void Task::alignPointcloudAsMLS(const base::Time& ts, const std::vector< base::V
     }
     grid->clear();
     pointcloud_env->attachItem(pc, pointcloud_env->getRootNode());
-    pointcloud_env->addInput(pointcloud_projection.get(), pc);
+    pointcloud_env->addInput(pointcloud_projection, pc);
     pointcloud_projection->updateAll();
         
     // remove inputs
-    pointcloud_env->removeInput(pointcloud_projection.get(), pc);
+    pointcloud_env->removeInput(pointcloud_projection, pc);
     pointcloud_env->detachItem(pc, true);
 
     // create pointcloud from mls_grid
@@ -369,8 +367,6 @@ bool Task::configureHook()
     // setup environment
     env.reset(new envire::Environment());
     env->addEventHandler(new MLSEventHandler(this));
-    pointcloud_env.reset();
-    pointcloud_projection.reset();
 
     // set icp config
     gicp_config = _gicp_configuration.get();
