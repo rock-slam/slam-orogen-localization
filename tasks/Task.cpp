@@ -75,6 +75,8 @@ void Task::createPointcloudFromMLS(PCLPointCloudPtr pointcloud, envire::MultiLev
 void Task::updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid)
 {
     map_pointcloud->clear();
+    model_cloud.points.clear();
+    model_cloud.colors.clear();
     Eigen::Affine3f map2world_affine(map2world.getTransform());
     
     createPointcloudFromMLS(map_pointcloud, mls_grid);
@@ -138,7 +140,7 @@ void Task::alignPointcloudAsMLS(const base::Time& ts, const std::vector< base::V
         
     // remove inputs
     pointcloud_env->removeInput(pointcloud_projection.get(), pc);
-    pointcloud_env->detachItem(pc);
+    pointcloud_env->detachItem(pc, true);
 
     // create pointcloud from mls_grid
     PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
@@ -146,6 +148,7 @@ void Task::alignPointcloudAsMLS(const base::Time& ts, const std::vector< base::V
     
     // create debug pointcloud
     aligned_cloud.points.clear();
+    aligned_cloud.colors.clear();
     aligned_cloud.points.reserve(pcl_pointcloud->size());
     for(unsigned i = 0; i < pcl_pointcloud->size(); i++)
     {
