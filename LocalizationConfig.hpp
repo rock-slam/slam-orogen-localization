@@ -7,6 +7,12 @@
 
 namespace localization
 {
+    
+enum EnvireMapType
+{
+    MultiLevelSurfaceGrid = 0,
+    Pointcloud
+};
 
 struct ICPDebugInformation
 {

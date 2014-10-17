@@ -22,11 +22,15 @@ Task::~Task()
 void MLSEventHandler::handle( const envire::Event& event )
 {
     envire::MultiLevelSurfaceGrid* mls_grid = dynamic_cast<envire::MultiLevelSurfaceGrid*>(event.a.get());
+    envire::Pointcloud* pc = dynamic_cast<envire::Pointcloud*>(event.a.get());
     if(event.type == envire::event::ITEM && 
-       (event.operation == envire::event::ADD || event.operation == envire::event::UPDATE) && 
-        mls_grid)
+       (event.operation == envire::event::ADD || event.operation == envire::event::UPDATE))
     {
-        task->gotNewMls = true;
+	if((task->map_type == localization::MultiLevelSurfaceGrid && mls_grid) ||
+	   (task->map_type == localization::Pointcloud && pc))
+	{
+	    task->got_map_update = true;
+	}
     }
 }
 
@@ -72,14 +76,29 @@ void Task::createPointcloudFromMLS(PCLPointCloudPtr pointcloud, envire::MultiLev
     }
 }
 
+void Task::updateICPModelFromMap(envire::Pointcloud* pointcloud)
+{
+    map_pointcloud->clear();
+    map_pointcloud->resize(pointcloud->vertices.size());
+    for(unsigned i = 0; i < pointcloud->vertices.size(); i++)
+    {
+	map_pointcloud->at(i).getVector3fMap() = pointcloud->vertices[i].cast<float>();
+    }
+    updateICPModelFromMap();
+}
+
 void Task::updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid)
 {
     map_pointcloud->clear();
+    createPointcloudFromMLS(map_pointcloud, mls_grid);
+    updateICPModelFromMap();
+}
+
+void Task::updateICPModelFromMap()
+{
     model_cloud.points.clear();
     model_cloud.colors.clear();
     Eigen::Affine3f map2world_affine(map2world.getTransform());
-    
-    createPointcloudFromMLS(map_pointcloud, mls_grid);
     
     for(unsigned i = 0; i < map_pointcloud->size(); i++)
     {
@@ -96,7 +115,6 @@ void Task::updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid)
 	target_pointcloud->points = map_pointcloud->points;
         icp->setInputTarget(target_pointcloud);
     }
-
 }
 
 void Task::alignPointcloudAsMLS(const base::Time& ts, const std::vector< base::Vector3d >& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry)
@@ -398,8 +416,9 @@ bool Task::configureHook()
 	    RTT::log(RTT::Error) << "Couldn't load inital multi-level surface grid: " << e.what() << RTT::endlog();
 	}
     }
-    gotNewMls = false;
+    got_map_update = false;
     worldName = _outputFrameName.get();
+    map_type = _envire_map_type.value();
 
     return true;
 }
@@ -420,11 +439,31 @@ void Task::updateHook()
         env->applyEvents(*binary_event);
     }
     
-    if(gotNewMls)
+    if(got_map_update)
     {
-        boost::intrusive_ptr<envire::MLSGrid> mls_grid = env->getItem<envire::MLSGrid>();
-        updateICPModelFromMap(mls_grid.get());
-        gotNewMls = false;
+	try
+	{
+	    if(map_type == MultiLevelSurfaceGrid)
+	    {
+		boost::intrusive_ptr<envire::MLSGrid> mls_grid = env->getItem<envire::MLSGrid>();
+		updateICPModelFromMap(mls_grid.get());
+	    }
+	    else if(map_type == Pointcloud)
+	    {
+		boost::intrusive_ptr<envire::Pointcloud> pointcloud = env->getItem<envire::Pointcloud>();
+		updateICPModelFromMap(pointcloud.get());
+	    }
+	    else
+	    {
+		RTT::log(RTT::Error) << "Can not handle unknown envire map type." << RTT::endlog();
+	    }
+	}
+	catch (std::runtime_error e)
+	{
+	    RTT::log(RTT::Error) << "Failed to get the envire map: " << e.what() << RTT::endlog();
+	}
+	
+        got_map_update = false;
     }
     
     TaskBase::updateHook();

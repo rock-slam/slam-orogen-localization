@@ -61,11 +61,12 @@ namespace localization {
 	base::samples::Pointcloud aligned_cloud;
 	GICPConfiguration gicp_config;
 	ICPDebugInformation icp_debug;
+	EnvireMapType map_type;
         
         std::string bodyName;
         std::string worldName;
 
-        bool gotNewMls;
+        bool got_map_update;
 	
 	/**
 	 * Creates a pcl pointcloud from a mls map
@@ -82,6 +83,14 @@ namespace localization {
          * The incoming sample pointclouds will be aligned to this model pointcould.
          */
         void updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid);
+	/**
+         * Uses the incoming envire Pointcloud as model pointcould.
+         */
+        void updateICPModelFromMap(envire::Pointcloud* pointcloud);
+	/**
+         * Updates the model in icp with the new pointcloud.
+         */
+	void updateICPModelFromMap();
 
         /**
          * Aligns the given sample pointcloud to the current map model.
