@@ -2,6 +2,7 @@
   <description brief="Localization module">
   This module provides a localisation in a static map.
   </description>
+  <maintainer>Sascha Arnold/sascha.arnold@dfki.de</maintainer>
   <author>Sascha Arnold/sascha.arnold@dfki.de</author>
   <license></license>
   <url>http://</url>
