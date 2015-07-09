@@ -1,6 +1,7 @@
 /* Generated from orogen/lib/orogen/templates/tasks/Task.cpp */
 
 #include "PoseProvider.hpp"
+#include "graph_slam/GraphSlamDebugTypes.hpp"
 
 using namespace localization;
 
@@ -45,7 +46,7 @@ void PoseProvider::updateHook()
 {
     PoseProviderBase::updateHook();
     
-    PoseProviderUpdate pose_update;
+    graph_slam::PoseProviderUpdate pose_update;
     if (_pose_provider_update.readNewest(pose_update) == RTT::NewData) 
     {
 	last_body2world = pose_update.body2world.toTransform();

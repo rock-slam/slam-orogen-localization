@@ -302,7 +302,7 @@ void Task::updatePosition(const base::Time &curTime, const Eigen::Affine3d &curB
     sample_out.sourceFrame = bodyName;
     sample_out.targetFrame = worldName;
     _pose_samples.write(sample_out);
-    PoseProviderUpdate pose_provider_update;
+    graph_slam::PoseProviderUpdate pose_provider_update;
     pose_provider_update.body2world = sample_out.getPose();
     pose_provider_update.body2odometry = base::Pose(curBody2Odometry);
     _pose_provider_update.write(pose_provider_update);

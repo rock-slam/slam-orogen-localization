@@ -17,15 +17,6 @@ struct ICPDebugInformation
     ICPDebugInformation() : time(base::Time::now()), successful_alignments(0), failed_alignments(0), last_fitness_score(-1.0) {}
 };
     
-struct PoseProviderUpdate
-{
-    base::Time time;
-    base::Pose body2world;
-    base::Pose body2odometry;
-    
-    PoseProviderUpdate() :time(base::Time::now()) {}
-};
-
 struct GICPConfiguration
 {
     /** The maximum distance threshold between two correspondent points in source <-> target */

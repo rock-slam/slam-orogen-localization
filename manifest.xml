@@ -10,6 +10,7 @@
   <depend package="drivers/orogen/transformer" />
   <depend package="base/cmake" />
   <depend package="slam/orogen/envire" />
+  <depend package="slam/orogen/graph_slam" />
   <depend package="slam/flann" />
   <depend package="slam/envire" />
   <depend package="slam/pcl" />
