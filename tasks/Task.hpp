@@ -61,7 +61,8 @@ namespace localization {
 	base::samples::Pointcloud aligned_cloud;
 	GICPConfiguration gicp_config;
 	ICPDebugInformation icp_debug;
-        
+    bool init_odometry; 
+
         std::string bodyName;
         std::string worldName;
 

@@ -44,6 +44,14 @@ void VelodyneInMLS::lidar_samplesTransformerCallback(const base::Time &ts, const
         new_state = TaskBase::MISSING_TRANSFORMATION;
         return;
     }
+    
+    if(init_odometry)
+    {
+            init_odometry = false;
+            last_body2odometry = body2odometry;
+            last_odometry2body = body2odometry.inverse();
+            return;
+    }
 
     if(newICPRunPossible(body2odometry.getTransform()))
     {

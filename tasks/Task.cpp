@@ -358,6 +358,7 @@ bool Task::configureHook()
     last_body2odometry = envire::TransformWithUncertainty::Identity();
     last_odometry2body = envire::TransformWithUncertainty::Identity();
     map2world = envire::TransformWithUncertainty::Identity();
+    init_odometry = true;
     
     last_icp_match.microseconds = 0;
     
