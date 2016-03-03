@@ -35,7 +35,7 @@ void PointcloudInMLS::pointcloud_samplesTransformerCallback(const base::Time &ts
     Eigen::Affine3d pointcloud2body;
     if (!_pointcloud2body.get(ts, pointcloud2body))
     {
-        RTT::log(RTT::Error) << "skip, have no pointcloud2odometry transformation sample!" << RTT::endlog();
+        RTT::log(RTT::Error) << "skip, have no pointcloud2body transformation sample!" << RTT::endlog();
         new_state = TaskBase::MISSING_TRANSFORMATION;
         return;
     }
