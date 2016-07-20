@@ -1,7 +1,7 @@
 name "localization"
 
 using_library 'envire'
-using_library 'pcl_registration-1.7'
+using_library 'pcl_registration-1.8'
 using_library 'velodyne_lidar'
 
 import_types_from 'base'
