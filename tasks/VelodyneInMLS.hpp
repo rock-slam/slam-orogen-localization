@@ -4,6 +4,7 @@
 #define LOCALIZATION_VELODYNEINMLS_TASK_HPP
 
 #include "localization/VelodyneInMLSBase.hpp"
+#include <base/samples/DepthMap.hpp>
 
 namespace localization {
 
@@ -26,7 +27,7 @@ namespace localization {
 	friend class VelodyneInMLSBase;
     protected:
 
-        virtual void lidar_samplesTransformerCallback(const base::Time &ts, const ::velodyne_lidar::MultilevelLaserScan &lidar_samples_sample);
+        virtual void lidar_samplesTransformerCallback(const base::Time &ts, const ::base::samples::DepthMap &lidar_samples_sample);
         void odometryCallback(base::Time ts);
     public:
         /** TaskContext constructor for VelodyneInMLS

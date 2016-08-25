@@ -1,7 +1,7 @@
 /* Generated from orogen/lib/orogen/templates/tasks/Task.cpp */
 
 #include "VelodyneInMLS.hpp"
-#include <velodyne_lidar/pointcloudConvertHelper.hpp>
+#include <graph_slam/pointcloud_helper.hpp>
 
 using namespace localization;
 
@@ -28,7 +28,7 @@ void VelodyneInMLS::odometryCallback(base::Time ts)
     updatePosition(ts, body2Odometry);
 }
 
-void VelodyneInMLS::lidar_samplesTransformerCallback(const base::Time &ts, const ::velodyne_lidar::MultilevelLaserScan &lidar_samples_sample)
+void VelodyneInMLS::lidar_samplesTransformerCallback(const base::Time &ts, const ::base::samples::DepthMap &lidar_samples_sample)
 {
     Eigen::Affine3d laser2body;
     if (!_velodyne2body.get(ts, laser2body))
@@ -56,12 +56,13 @@ void VelodyneInMLS::lidar_samplesTransformerCallback(const base::Time &ts, const
     if(newICPRunPossible(body2odometry.getTransform()))
     {
         // filter point cloud
-        velodyne_lidar::MultilevelLaserScan filtered_lidar_sample;
-        velodyne_lidar::ConvertHelper::filterOutliers(lidar_samples_sample, filtered_lidar_sample, _maximum_angle_to_neighbor, _minimum_valid_neighbors);
+        base::samples::DepthMap filtered_lidar_sample = lidar_samples_sample;
+        graph_slam::filterMinDistance(filtered_lidar_sample, 1.0);
+        graph_slam::filterOutliers(filtered_lidar_sample, _maximum_angle_to_neighbor, _minimum_valid_neighbors);
         
         // add new vertex to graph
         std::vector< Eigen::Vector3d > pointcloud;
-        velodyne_lidar::ConvertHelper::convertScanToPointCloud(filtered_lidar_sample, pointcloud, laser2body);
+        filtered_lidar_sample.convertDepthMapToPointCloud(pointcloud, laser2body);
 
         // align pointcloud to map
         alignPointcloud(ts, pointcloud, body2odometry);
