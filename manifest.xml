@@ -15,7 +15,7 @@
   <depend package="slam/envire" />
   <depend package="slam/pcl" />
   <depend package="base/types" />
-  <depend package="slam/graph_slam" />
+  <depend package="perception/depth_map_preprocessing" />
 
   <tags>stable</tags>
 </package>

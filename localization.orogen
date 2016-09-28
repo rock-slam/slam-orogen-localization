@@ -2,7 +2,7 @@ name "localization"
 
 using_library 'envire'
 using_library 'pcl_registration-1.8'
-using_library 'graph_slam'
+using_library 'depth_map_preprocessing'
 
 import_types_from 'base'
 import_types_from 'envire'
@@ -78,7 +78,7 @@ task_context "VelodyneInMLS" do
     needs_configuration
 
     ## point cloud filter parameter
-    property('maximum_angle_to_neighbor', 'double', 2.53).
+    property('maximum_angle_to_neighbor', 'double', 0.95).
         doc('valid neigbors have an angle not greater than this value.').
         doc('the angle is always defined from the origin to the more distant point.')
     property('minimum_valid_neighbors', 'int', 2).
