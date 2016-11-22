@@ -9,12 +9,9 @@
   <logo>http://</logo>
   <depend package="drivers/orogen/transformer" />
   <depend package="base/cmake" />
-  <depend package="slam/orogen/envire" />
-  <depend package="slam/orogen/graph_slam" />
-  <depend package="slam/flann" />
-  <depend package="slam/envire" />
   <depend package="slam/pcl" />
   <depend package="base/types" />
+  <depend package="slam/envire" />
   <depend package="perception/depth_map_preprocessing" />
 
   <tags>stable</tags>

@@ -47,7 +47,7 @@ namespace localization {
         bool hasNewPointCloud;
         
         virtual void pointcloud_samplesTransformerCallback(const base::Time &ts, const ::base::samples::Pointcloud &pointcloud_samples_sample);
-        void odometryCallback(base::Time ts);
+
     public:
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW
         /** TaskContext constructor for PointcloudInMLS

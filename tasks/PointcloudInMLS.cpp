@@ -20,16 +20,6 @@ PointcloudInMLS::~PointcloudInMLS()
 {
 }
 
-void PointcloudInMLS::odometryCallback(base::Time ts)
-{
-    Eigen::Affine3d body2Odometry;
-    if(!_body2odometry.get(ts, body2Odometry, false))
-        return;
-
-    updatePosition(ts, body2Odometry);
-}
-
-
 void PointcloudInMLS::pointcloud_samplesTransformerCallback(const base::Time &ts, const ::base::samples::Pointcloud &pointcloud_samples_sample)
 {
     Eigen::Affine3d pointcloud2body;
@@ -40,7 +30,7 @@ void PointcloudInMLS::pointcloud_samplesTransformerCallback(const base::Time &ts
         return;
     }
     envire::TransformWithUncertainty body2odometry;
-    if (!_body2odometry.get(ts, body2odometry, true))
+    if (!_body2odometry.get(ts, body2odometry))
     {
         RTT::log(RTT::Error) << "skip, have no body2odometry transformation sample!" << RTT::endlog();
         new_state = TaskBase::MISSING_TRANSFORMATION;
@@ -49,10 +39,10 @@ void PointcloudInMLS::pointcloud_samplesTransformerCallback(const base::Time &ts
 
     if(init_odometry)
     {
-            init_odometry = false;
-            last_body2odometry = body2odometry;
-            last_odometry2body = body2odometry.inverse();
-            return;
+        init_odometry = false;
+        last_body2odometry = body2odometry;
+        last_odometry2body = body2odometry.inverse();
+        return;
     }
     
     if(newICPRunPossible(body2odometry.getTransform()))
@@ -73,8 +63,7 @@ bool PointcloudInMLS::configureHook()
     if (! PointcloudInMLSBase::configureHook())
         return false;
     
-    bodyName = _body_frame.get();
-    _body2odometry.registerUpdateCallback(boost::bind(&PointcloudInMLS::odometryCallback, this, _1));
+    body_frame = _body_frame.get();
     
     return true;
 }
@@ -92,6 +81,7 @@ void PointcloudInMLS::updateHook()
     //if we got a new pointcloud, perform alignment on the latest one
     if(hasNewPointCloud)
     {
+        PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
         if(!pc.pointcloud2body.matrix().isApprox(Eigen::Matrix4d::Identity()))
         {
             // apply transformation
@@ -101,11 +91,12 @@ void PointcloudInMLS::updateHook()
             {
                 transformed_pointcloud.push_back(pc.pointcloud2body * (*it));
             }
-            alignPointcloud(pc.time, transformed_pointcloud, pc.body2odometry);
+            convertBaseToPCLPointCloud(transformed_pointcloud, *pcl_pointcloud);
         }
         else
-            alignPointcloud(pc.time, pc.pointcloud_sample.points, pc.body2odometry); 
-        
+            convertBaseToPCLPointCloud(pc.pointcloud_sample.points, *pcl_pointcloud);
+
+        alignPointcloud(pc.time, pcl_pointcloud, pc.body2odometry);
         hasNewPointCloud = false;
     }
 }
