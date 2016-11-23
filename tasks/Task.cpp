@@ -16,11 +16,17 @@ using namespace localization;
 Task::Task(std::string const& name)
     : TaskBase(name)
 {
+    base::Vector6d process_noise;
+    process_noise << 0.0025, 0.0025, 0.0025, 0.0016, 0.0016, 0.0016;
+    _process_noise_diagonal.set(process_noise);
 }
 
 Task::Task(std::string const& name, RTT::ExecutionEngine* engine)
     : TaskBase(name, engine)
 {
+    base::Vector6d process_noise;
+    process_noise << 0.0025, 0.0025, 0.0025, 0.0016, 0.0016, 0.0016;
+    _process_noise_diagonal.set(process_noise);
 }
 
 Task::~Task()
@@ -61,7 +67,19 @@ void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr& sample_
 
 
     Eigen::Affine3d odometry_delta = last_odometry2body.getTransform() * body2odometry.getTransform();
-    Eigen::Affine3d transformation_guess = last_body2world.getTransform() * odometry_delta;
+    double delta_t = (ts - last_odometry_time).toSeconds();
+    last_odometry2body = body2odometry.inverse();
+    last_odometry_time = ts;
+
+    // UKF prediction step
+    WPoseState odometry_delta_;
+    odometry_delta_.position = TranslationType(odometry_delta.translation());
+    odometry_delta_.orientation = RotationType(odometry_delta.linear());
+    ukf->predict(boost::bind(processModel<WPoseState>, _1, odometry_delta_),  ukfom::ukf<WPoseState>::cov(delta_t * filter_process_noise));
+
+    Eigen::Affine3d transformation_guess;
+    transformation_guess = ukf->mu().orientation;
+    transformation_guess.pretranslate( ukf->mu().position );
 
     base::TimeMark icp_run("ICP alignment");
     Eigen::Affine3d icp_result;
@@ -71,17 +89,14 @@ void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr& sample_
     {
         new_state = RUNNING;
         LOG_INFO_S << "ICP alignment successful. ICP score: " << icp_score;
-
-        last_body2world.setTransform(icp_result);
-        last_body2odometry = body2odometry;
-        last_odometry2body = body2odometry.inverse();
-        
-        LOG_INFO_S << "Got new ICP match " << last_body2world.getTransform().translation().transpose();
-
+        LOG_INFO_S << "Got new ICP match " << icp_result.translation().transpose();
         icp_debug.successful_alignments++;
-        
-        //write out current odometry sample
-        writeNewPose(ts);
+
+        WPoseState icp_result_;
+        icp_result_.position = TranslationType(icp_result.translation());
+        icp_result_.orientation = RotationType(icp_result.linear());
+        PoseCovariance icp_cov = 0.01 * PoseCovariance::Identity();
+        ukf->update(icp_result_, boost::bind(measurementUpdate<WPoseState>, _1), icp_cov);
     }
     else
     {
@@ -91,6 +106,9 @@ void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr& sample_
     }
 
     LOG_INFO_S << icp_run;
+
+    //write out current pose sample
+    writeCurrentState(ts);
 
     icp_debug.time = ts;
     icp_debug.last_fitness_score = icp_score;
@@ -108,7 +126,10 @@ void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr& sample_
         std::vector<Eigen::Vector3d> aligned_cloud;
         if(new_state != ICP_ALIGNMENT_FAILED)
         {
-            pcl::transformPointCloud(*input_pointcloud, transformed_measurement, last_body2world.getTransform());
+            Eigen::Affine3d current_pose;
+            current_pose = ukf->mu().orientation;
+            current_pose.pretranslate( ukf->mu().position );
+            pcl::transformPointCloud(*input_pointcloud, transformed_measurement, current_pose);
             convertPCLToBasePointCloud(transformed_measurement, aligned_cloud);
             std::vector<Eigen::Vector4d> aligned_cloud_color(aligned_cloud.size(), base::Vector4d(0.,1.,0.,1.));
             debug_cloud.points.insert(debug_cloud.points.end(), aligned_cloud.begin(), aligned_cloud.end());
@@ -165,13 +186,16 @@ bool Task::performICPOptimization(const PCLPointCloudPtr& sample_pointcoud, cons
     return false;
 }
 
-void Task::writeNewPose(const base::Time &curTime)
+void Task::writeCurrentState(const base::Time &curTime)
 {
     //comput delta between odometry position at the time of the last ICP match and the current odometry position
     base::samples::RigidBodyState sample_out;
     sample_out.invalidate();
     sample_out.time = curTime;
-    sample_out.setTransform(last_body2world.getTransform());
+    sample_out.position = ukf->mu().position;
+    sample_out.orientation = ukf->mu().orientation;
+    sample_out.cov_position = ukf->sigma().block(0,0,3,3);
+    sample_out.cov_orientation = ukf->sigma().block(3,3,3,3);
     sample_out.sourceFrame = body_frame;
     sample_out.targetFrame = world_frame;
     _pose_samples.write(sample_out);
@@ -179,7 +203,7 @@ void Task::writeNewPose(const base::Time &curTime)
 
 bool Task::newICPRunPossible(const Eigen::Affine3d& body2odometry) const
 {
-    if((last_body2odometry.getTransform().inverse() * body2odometry).translation().norm() > gicp_config.icp_match_interval ||
+    if((last_odometry2body.getTransform() * body2odometry).translation().norm() > gicp_config.icp_match_interval ||
         (base::Time::now() - last_icp_match).toSeconds() > gicp_config.icp_match_interval_time)
         return true;
     return false;
@@ -198,17 +222,6 @@ bool Task::configureHook()
     last_state = PRE_OPERATIONAL;
     new_state = RUNNING;
 
-    // set inital transformations
-    last_body2world.setTransform(_start_pose.value().toTransform());
-    last_body2odometry = envire::TransformWithUncertainty::Identity();
-    last_odometry2body = envire::TransformWithUncertainty::Identity();
-    init_odometry = true;
-    
-    last_icp_match.microseconds = 0;
-    
-    // reset map point cloud
-    model_cloud.reset();
-
     // set icp config
     gicp_config = _gicp_configuration.get();
     icp.reset(new pcl::GeneralizedIterativeClosestPoint<PCLPoint, PCLPoint>());
@@ -218,6 +231,27 @@ bool Task::configureHook()
     icp->setCorrespondenceRandomness(gicp_config.correspondence_randomness);
     icp->setMaximumOptimizerIterations(gicp_config.maximum_optimizer_iterations);
     icp->setRotationEpsilon(gicp_config.rotation_epsilon);
+
+    // initialize filter
+    double pos_var = pow(gicp_config.max_correspondence_distance, 2.);
+    double rot_var = 2.5; // sigma of 90 degree
+    PoseCovariance initial_cov = PoseCovariance::Zero();
+    initial_cov.block(0,0,3,3) = Eigen::Vector3d(pos_var, pos_var, pos_var).asDiagonal();
+    initial_cov.block(3,3,3,3) = Eigen::Vector3d(rot_var, rot_var, rot_var).asDiagonal();
+    WPoseState initial_state;
+    initial_state.position = RotationType::vect_type(_start_pose.value().position);
+    initial_state.orientation = MTK::SO3<double>(_start_pose.value().orientation);
+    ukf.reset(new ukfom::ukf<WPoseState>(initial_state, initial_cov));
+    filter_process_noise = _process_noise_diagonal.value().asDiagonal();
+
+    // set inital transformations
+    last_odometry2body = envire::TransformWithUncertainty::Identity();
+    init_odometry = true;
+    
+    last_icp_match.microseconds = 0;
+    
+    // reset map point cloud
+    model_cloud.reset();
     
     // load initial pointcloud
     if(!_ply_path.value().empty())
@@ -251,6 +285,19 @@ void Task::updateHook()
         PCLPointCloudPtr pcl_pc(new PCLPointCloud());
         convertBaseToPCLPointCloud(pointcloud.points, *pcl_pc);
         setModelPointCloud(pcl_pc);
+    }
+
+    // apply external pose update
+    base::samples::RigidBodyState pose_update;
+    while(_pose_update.read(pose_update, false) == RTT::NewData)
+    {
+        WPoseState pose_update_;
+        pose_update_.position = TranslationType(pose_update.position);
+        pose_update_.orientation = MTK::SO3<double>(pose_update.orientation);
+        PoseCovariance pose_update_cov = PoseCovariance::Zero();
+        pose_update_cov.block(0,0,3,3) = pose_update.cov_position;
+        pose_update_cov.block(3,3,3,3) = pose_update.cov_orientation;
+        ukf->update(pose_update_, boost::bind(measurementUpdate<WPoseState>, _1), pose_update_cov);
     }
     
     TaskBase::updateHook();

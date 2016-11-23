@@ -19,6 +19,8 @@ task_context "Task" do
     # icp configuration
     property('gicp_configuration', '/localization/GICPConfiguration')
 
+    property('process_noise_diagonal', '/base/Vector6d')
+
     # Subsamples the input pointclouds according to this configuration
     property('subsampling', '/localization/SubSampling', :None)
     property('subsampling_resolution', '/base/Vector3d')
@@ -31,6 +33,9 @@ task_context "Task" do
     ## input ports
     # updates the model pointcloud
     input_port('model_pointcloud', '/base/samples/Pointcloud')
+
+    # allows an external and unaligned pose update
+    input_port('pose_update', '/base/samples/RigidBodyState')
         
     ## output ports
     # timestamped samples of the current pose of the robot

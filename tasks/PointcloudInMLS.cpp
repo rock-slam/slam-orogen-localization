@@ -40,7 +40,6 @@ void PointcloudInMLS::pointcloud_samplesTransformerCallback(const base::Time &ts
     if(init_odometry)
     {
         init_odometry = false;
-        last_body2odometry = body2odometry;
         last_odometry2body = body2odometry.inverse();
         return;
     }
