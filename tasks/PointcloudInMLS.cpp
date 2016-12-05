@@ -29,25 +29,11 @@ void PointcloudInMLS::pointcloud_samplesTransformerCallback(const base::Time &ts
         new_state = TaskBase::MISSING_TRANSFORMATION;
         return;
     }
-    envire::TransformWithUncertainty body2odometry;
-    if (!_body2odometry.get(ts, body2odometry))
-    {
-        RTT::log(RTT::Error) << "skip, have no body2odometry transformation sample!" << RTT::endlog();
-        new_state = TaskBase::MISSING_TRANSFORMATION;
-        return;
-    }
-
-    if(init_odometry)
-    {
-        init_odometry = false;
-        last_odometry2body = body2odometry.inverse();
-        return;
-    }
     
-    if(newICPRunPossible(body2odometry.getTransform()))
+    if(newICPRunPossible())
     {
         //save pointcloud for processing later on
-        pc = PointcloudWithPose(ts, pointcloud_samples_sample, pointcloud2body, body2odometry);
+        pc = PointcloudWithPose(ts, pointcloud_samples_sample, pointcloud2body);
         hasNewPointCloud = true;
     }
 }
@@ -63,6 +49,8 @@ bool PointcloudInMLS::configureHook()
         return false;
     
     body_frame = _body_frame.get();
+
+    _transformer.registerTransformCallback(_body2odometry, boost::bind(&Task::integrateOdometry, this, _1, _2));
     
     return true;
 }
@@ -95,7 +83,7 @@ void PointcloudInMLS::updateHook()
         else
             convertBaseToPCLPointCloud(pc.pointcloud_sample.points, *pcl_pointcloud);
 
-        alignPointcloud(pc.time, pcl_pointcloud, pc.body2odometry);
+        alignPointcloud(pc.time, pcl_pointcloud);
         hasNewPointCloud = false;
     }
 }

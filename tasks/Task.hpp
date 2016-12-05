@@ -4,9 +4,9 @@
 #define LOCALIZATION_TASK_TASK_HPP
 
 #include "localization/TaskBase.hpp"
-#include <envire/core/Transform.hpp>
 #include <boost/shared_ptr.hpp>
 #include <pcl/registration/gicp.h>
+#include <transformer/Transformer.hpp>
 
 #include <mtk/types/SOn.hpp>
 #include <mtk/types/vect.hpp>
@@ -49,7 +49,8 @@ namespace localization
     {
 	friend class TaskBase;
     protected:
-        envire::TransformWithUncertainty last_odometry2body;
+        Eigen::Affine3d last_odometry2body;
+        Eigen::Affine3d odometry_at_last_icp;
         boost::shared_ptr< pcl::GeneralizedIterativeClosestPoint<PCLPoint, PCLPoint> > icp;
         boost::shared_ptr< ukfom::ukf<WPoseState> > ukf;
         PoseCovariance filter_process_noise;
@@ -73,13 +74,12 @@ namespace localization
         /**
         * Checks if a new icp run should be made.
         */
-        bool newICPRunPossible(const Eigen::Affine3d& body2odometry) const;
+        bool newICPRunPossible() const;
 
         /**
          * Aligns the given sample pointcloud to the current map model.
-         * A current odometry sample is mandatory for this step.
          */
-        void alignPointcloud(const base::Time& ts, const PCLPointCloudPtr& sample_pointcoud, const envire::TransformWithUncertainty& body2odometry);
+        void alignPointcloud(const base::Time& ts, const PCLPointCloudPtr& sample_pointcoud);
 
         /**
          * Runs the ICP alignment
@@ -100,6 +100,12 @@ namespace localization
         void convertBaseToPCLPointCloud(const std::vector< Eigen::Matrix<Scalar,3,1,Options> >& base_pc, pcl::PointCloud<PCLPoint>& pcl_pc) const;
 
     public:
+
+        /**
+         * Integrates the odometry information as a delta pose step
+         */
+        void integrateOdometry(const base::Time &ts, const transformer::Transformation &tr);
+
         /** TaskContext constructor for Task
          * \param name Name of the task. This name needs to be unique to make it identifiable via nameservices.
          * \param initial_state The initial TaskState of the TaskContext. Default is Stopped state.

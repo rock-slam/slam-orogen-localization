@@ -14,14 +14,13 @@ namespace localization {
         PointcloudWithPose()
         {}
         
-        PointcloudWithPose(const base::Time &ts, const ::base::samples::Pointcloud &pc, const Eigen::Affine3d &pointcloud2body, envire::TransformWithUncertainty &body2odometry) 
-        : time(ts), pointcloud_sample(pc), pointcloud2body(pointcloud2body), body2odometry(body2odometry)
+        PointcloudWithPose(const base::Time &ts, const ::base::samples::Pointcloud &pc, const Eigen::Affine3d &pointcloud2body)
+        : time(ts), pointcloud_sample(pc), pointcloud2body(pointcloud2body)
         {
         }
         base::Time time;
         ::base::samples::Pointcloud pointcloud_sample;
         Eigen::Affine3d pointcloud2body;
-        envire::TransformWithUncertainty body2odometry;
     };
     
     /*! \class PointcloudInMLS 

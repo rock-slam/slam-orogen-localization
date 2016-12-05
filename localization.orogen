@@ -1,6 +1,5 @@
 name "localization"
 
-using_library 'envire'
 using_library 'pcl_registration-1.7'
 using_library 'pcl_io-1.7'
 using_library 'depth_map_preprocessing'

@@ -28,22 +28,8 @@ void VelodyneInMLS::lidar_samplesTransformerCallback(const base::Time &ts, const
         new_state = TaskBase::MISSING_TRANSFORMATION;
         return;
     }
-    envire::TransformWithUncertainty body2odometry;
-    if (!_body2odometry.get(ts, body2odometry))
-    {
-        RTT::log(RTT::Error) << "skip, have no body2odometry transformation sample!" << RTT::endlog();
-        new_state = TaskBase::MISSING_TRANSFORMATION;
-        return;
-    }
-    
-    if(init_odometry)
-    {
-        init_odometry = false;
-        last_odometry2body = body2odometry.inverse();
-        return;
-    }
 
-    if(newICPRunPossible(body2odometry.getTransform()))
+    if(newICPRunPossible())
     {
         // filter point cloud
         base::samples::DepthMap filtered_lidar_sample = lidar_samples_sample;
@@ -57,7 +43,7 @@ void VelodyneInMLS::lidar_samplesTransformerCallback(const base::Time &ts, const
         // align pointcloud to map
         PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
         convertBaseToPCLPointCloud(pointcloud, *pcl_pointcloud);
-        alignPointcloud(ts, pcl_pointcloud, body2odometry);
+        alignPointcloud(ts, pcl_pointcloud);
     }
 }
 
@@ -71,6 +57,8 @@ bool VelodyneInMLS::configureHook()
         return false;
     
     body_frame = _body_frame.value();
+
+    _transformer.registerTransformCallback(_body2odometry, boost::bind(&Task::integrateOdometry, this, _1, _2));
     
     return true;
 }

@@ -39,7 +39,7 @@ void Task::setModelPointCloud(const PCLPointCloudPtr& pc)
     icp->setInputTarget(model_cloud);
 }
 
-void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr& sample_pointcoud, const envire::TransformWithUncertainty& body2odometry)
+void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr& sample_pointcoud)
 {
     if(sample_pointcoud->empty())
     {
@@ -65,17 +65,7 @@ void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr& sample_
     else
         input_pointcloud = sample_pointcoud;
 
-
-    Eigen::Affine3d odometry_delta = last_odometry2body.getTransform() * body2odometry.getTransform();
-    double delta_t = (ts - last_odometry_time).toSeconds();
-    last_odometry2body = body2odometry.inverse();
-    last_odometry_time = ts;
-
-    // UKF prediction step
-    WPoseState odometry_delta_;
-    odometry_delta_.position = TranslationType(odometry_delta.translation());
-    odometry_delta_.orientation = RotationType(odometry_delta.linear());
-    ukf->predict(boost::bind(processModel<WPoseState>, _1, odometry_delta_),  ukfom::ukf<WPoseState>::cov(delta_t * filter_process_noise));
+    odometry_at_last_icp = last_odometry2body;
 
     Eigen::Affine3d transformation_guess;
     transformation_guess = ukf->mu().orientation;
@@ -112,7 +102,7 @@ void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr& sample_
 
     icp_debug.time = ts;
     icp_debug.last_fitness_score = icp_score;
-    icp_debug.icp_alignment_time = icp_run.passed().toSeconds();
+    icp_debug.icp_alignment_time = (double)icp_run.cycles() / (double)CLOCKS_PER_SEC;
     _icp_debug_information.write(icp_debug);
     
     // write debug pointcloud
@@ -201,14 +191,43 @@ void Task::writeCurrentState(const base::Time &curTime)
     _pose_samples.write(sample_out);
 }
 
-bool Task::newICPRunPossible(const Eigen::Affine3d& body2odometry) const
+bool Task::newICPRunPossible() const
 {
-    if((last_odometry2body.getTransform() * body2odometry).translation().norm() > gicp_config.icp_match_interval ||
-        (base::Time::now() - last_icp_match).toSeconds() > gicp_config.icp_match_interval_time)
+    if(!odometry_at_last_icp.matrix().allFinite() ||
+      (last_odometry2body * odometry_at_last_icp).translation().norm() > gicp_config.icp_match_interval ||
+      (base::Time::now() - last_icp_match).toSeconds() > gicp_config.icp_match_interval_time)
         return true;
     return false;
 }
 
+void Task::integrateOdometry(const base::Time& ts, const transformer::Transformation& tr)
+{
+    Eigen::Affine3d body2odometry;
+    if (!tr.get(ts, body2odometry))
+    {
+        RTT::log(RTT::Error) << "skip, have no body2odometry transformation sample!" << RTT::endlog();
+        new_state = TaskBase::MISSING_TRANSFORMATION;
+        return;
+    }
+
+    if(init_odometry)
+    {
+        init_odometry = false;
+        last_odometry2body = body2odometry.inverse();
+        return;
+    }
+
+    Eigen::Affine3d odometry_delta = last_odometry2body * body2odometry;
+    double delta_t = (ts - last_odometry_time).toSeconds();
+    last_odometry2body = body2odometry.inverse();
+    last_odometry_time = ts;
+
+    // UKF prediction step
+    WPoseState odometry_delta_;
+    odometry_delta_.position = TranslationType(odometry_delta.translation());
+    odometry_delta_.orientation = RotationType(odometry_delta.linear());
+    ukf->predict(boost::bind(processModel<WPoseState>, _1, odometry_delta_),  ukfom::ukf<WPoseState>::cov(delta_t * filter_process_noise));
+}
 
 /// The following lines are template definitions for the various state machine
 // hooks defined by Orocos::RTT. See Task.hpp for more detailed
@@ -245,7 +264,8 @@ bool Task::configureHook()
     filter_process_noise = _process_noise_diagonal.value().asDiagonal();
 
     // set inital transformations
-    last_odometry2body = envire::TransformWithUncertainty::Identity();
+    last_odometry2body = Eigen::Affine3d::Identity();
+    odometry_at_last_icp = Eigen::Affine3d(base::unknown<double>() * Eigen::Matrix4d::Ones());
     init_odometry = true;
     
     last_icp_match.microseconds = 0;

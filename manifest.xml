@@ -11,7 +11,6 @@
   <depend package="base/cmake" />
   <depend package="slam/pcl" />
   <depend package="base/types" />
-  <depend package="slam/envire" />
   <depend package="slam/mtk" />
   <depend package="perception/depth_map_preprocessing" />
 
