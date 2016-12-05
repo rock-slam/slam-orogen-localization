@@ -173,7 +173,7 @@ bool Task::performICPOptimization(const PCLPointCloudPtr& sample_pointcoud, cons
         icp->align(cloud_source_registered, transformation_guess.matrix().cast<float>());
     #endif
 
-    icp_score = icp->getFitnessScore();
+    icp_score = icp->getFitnessScore(gicp_config.max_correspondence_distance);
     if(icp->hasConverged() && icp_score <= gicp_config.max_mean_square_error)
     {
         #if PCL_VERSION_COMPARE(<, 1, 9, 0)
