@@ -29,7 +29,7 @@ void VelodyneInMLS::lidar_samplesTransformerCallback(const base::Time &ts, const
         return;
     }
 
-    if(newICPRunPossible())
+    if(newICPRunPossible(ts))
     {
         // filter point cloud
         base::samples::DepthMap filtered_lidar_sample = lidar_samples_sample;

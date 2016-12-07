@@ -30,11 +30,24 @@ void PointcloudInMLS::pointcloud_samplesTransformerCallback(const base::Time &ts
         return;
     }
     
-    if(newICPRunPossible())
+    if(newICPRunPossible(ts))
     {
-        //save pointcloud for processing later on
-        pc = PointcloudWithPose(ts, pointcloud_samples_sample, pointcloud2body);
-        hasNewPointCloud = true;
+        PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
+        if(!pointcloud2body.matrix().isApprox(Eigen::Matrix4d::Identity()))
+        {
+            // apply transformation
+            std::vector<base::Vector3d> transformed_pointcloud;
+            transformed_pointcloud.reserve(pointcloud_samples_sample.points.size());
+            for(std::vector<base::Vector3d>::const_iterator it = pointcloud_samples_sample.points.begin(); it != pointcloud_samples_sample.points.end(); it++)
+            {
+                transformed_pointcloud.push_back(pointcloud2body * (*it));
+            }
+            convertBaseToPCLPointCloud(transformed_pointcloud, *pcl_pointcloud);
+        }
+        else
+            convertBaseToPCLPointCloud(pointcloud_samples_sample.points, *pcl_pointcloud);
+
+        alignPointcloud(ts, pcl_pointcloud);
     }
 }
 
@@ -64,28 +77,6 @@ void PointcloudInMLS::updateHook()
 {
     //process all callbacks
     PointcloudInMLSBase::updateHook();
-
-    //if we got a new pointcloud, perform alignment on the latest one
-    if(hasNewPointCloud)
-    {
-        PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
-        if(!pc.pointcloud2body.matrix().isApprox(Eigen::Matrix4d::Identity()))
-        {
-            // apply transformation
-            std::vector<base::Vector3d> transformed_pointcloud;
-            transformed_pointcloud.reserve(pc.pointcloud_sample.points.size());
-            for(std::vector<base::Vector3d>::const_iterator it = pc.pointcloud_sample.points.begin(); it != pc.pointcloud_sample.points.end(); it++)
-            {
-                transformed_pointcloud.push_back(pc.pointcloud2body * (*it));
-            }
-            convertBaseToPCLPointCloud(transformed_pointcloud, *pcl_pointcloud);
-        }
-        else
-            convertBaseToPCLPointCloud(pc.pointcloud_sample.points, *pcl_pointcloud);
-
-        alignPointcloud(pc.time, pcl_pointcloud);
-        hasNewPointCloud = false;
-    }
 }
 void PointcloudInMLS::errorHook()
 {

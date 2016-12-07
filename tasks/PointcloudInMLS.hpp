@@ -6,22 +6,6 @@
 #include "localization/PointcloudInMLSBase.hpp"
 
 namespace localization {
-
-    class PointcloudWithPose
-    {
-    public:
-        EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-        PointcloudWithPose()
-        {}
-        
-        PointcloudWithPose(const base::Time &ts, const ::base::samples::Pointcloud &pc, const Eigen::Affine3d &pointcloud2body)
-        : time(ts), pointcloud_sample(pc), pointcloud2body(pointcloud2body)
-        {
-        }
-        base::Time time;
-        ::base::samples::Pointcloud pointcloud_sample;
-        Eigen::Affine3d pointcloud2body;
-    };
     
     /*! \class PointcloudInMLS 
      * \brief The task context provides and requires services. It uses an ExecutionEngine to perform its functions.
@@ -41,9 +25,6 @@ namespace localization {
     {
 	friend class PointcloudInMLSBase;
     protected:
-
-        PointcloudWithPose pc;
-        bool hasNewPointCloud;
         
         virtual void pointcloud_samplesTransformerCallback(const base::Time &ts, const ::base::samples::Pointcloud &pointcloud_samples_sample);
 

@@ -66,6 +66,7 @@ void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr& sample_
         input_pointcloud = sample_pointcoud;
 
     odometry_at_last_icp = last_odometry2body;
+    last_icp_match = ts;
 
     Eigen::Affine3d transformation_guess;
     transformation_guess = ukf->mu().orientation;
@@ -143,7 +144,6 @@ void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr& sample_
 
 bool Task::performICPOptimization(const PCLPointCloudPtr& sample_pointcoud, const Eigen::Affine3d& transformation_guess, Eigen::Affine3d& result, double &icp_score)
 {
-    last_icp_match = base::Time::now();
     icp->setInputSource(sample_pointcoud);
 
     PCLPointCloud cloud_source_registered;
@@ -191,11 +191,11 @@ void Task::writeCurrentState(const base::Time &curTime)
     _pose_samples.write(sample_out);
 }
 
-bool Task::newICPRunPossible() const
+bool Task::newICPRunPossible(const base::Time& current_time) const
 {
     if(!odometry_at_last_icp.matrix().allFinite() ||
       (last_odometry2body * odometry_at_last_icp).translation().norm() > gicp_config.icp_match_interval ||
-      (base::Time::now() - last_icp_match).toSeconds() > gicp_config.icp_match_interval_time)
+      (current_time - last_icp_match).toSeconds() > gicp_config.icp_match_interval_time)
         return true;
     return false;
 }

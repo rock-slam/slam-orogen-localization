@@ -74,7 +74,7 @@ namespace localization
         /**
         * Checks if a new icp run should be made.
         */
-        bool newICPRunPossible() const;
+        bool newICPRunPossible(const base::Time& current_time) const;
 
         /**
          * Aligns the given sample pointcloud to the current map model.
