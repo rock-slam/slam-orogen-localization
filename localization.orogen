@@ -3,6 +3,7 @@ name "localization"
 using_library 'pcl_registration-1.7'
 using_library 'pcl_io-1.7'
 using_library 'depth_map_preprocessing'
+using_library 'base-logging'
 
 import_types_from 'base'
 import_types_from 'LocalizationConfig.hpp'

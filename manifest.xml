@@ -9,6 +9,7 @@
   <logo>http://</logo>
   <depend package="drivers/orogen/transformer" />
   <depend package="base/cmake" />
+  <depend package="base/logging" />
   <depend package="slam/pcl" />
   <depend package="base/types" />
   <depend package="slam/mtk" />
