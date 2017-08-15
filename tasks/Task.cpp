@@ -9,7 +9,7 @@
 #include <base-logging/Logging.hpp>
 #include <base/TimeMark.hpp>
 #include <pcl/filters/voxel_grid.h>
-
+#include <pcl/registration/gicp.h>
 
 using namespace localization;
 
