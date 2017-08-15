@@ -5,7 +5,8 @@
 
 #include "localization/TaskBase.hpp"
 #include <boost/shared_ptr.hpp>
-#include <pcl/registration/gicp.h>
+#include <pcl/pcl_base.h>
+#include <pcl/point_types.h>
 #include <transformer/Transformer.hpp>
 
 #include <mtk/types/SOn.hpp>
@@ -14,6 +15,12 @@
 #include <mtk/startIdx.hpp>
 #include <mtk/build_manifold.hpp>
 #include <ukfom/ukf.hpp>
+
+namespace pcl
+{
+template <typename PointSource, typename PointTarget>
+class GeneralizedIterativeClosestPoint;
+}
 
 namespace localization
 {
