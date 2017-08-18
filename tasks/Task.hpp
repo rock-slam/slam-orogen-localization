@@ -9,34 +9,29 @@
 #include <pcl/point_types.h>
 #include <transformer/Transformer.hpp>
 
-#include <mtk/types/SOn.hpp>
-#include <mtk/types/vect.hpp>
-#include <ukfom/mtkwrap.hpp>
-#include <mtk/startIdx.hpp>
-#include <mtk/build_manifold.hpp>
-#include <ukfom/ukf.hpp>
-
 namespace pcl
 {
 template <typename PointSource, typename PointTarget>
 class GeneralizedIterativeClosestPoint;
 }
 
+namespace ukfom
+{
+    template <typename state>
+    class ukf;
+    template <typename manifold>
+    struct mtkwrap;
+}
+
 namespace localization
 {
+    class PoseState;
+
     typedef pcl::PointXYZ PCLPoint;
     typedef pcl::PointCloud<PCLPoint> PCLPointCloud;
     typedef typename PCLPointCloud::Ptr PCLPointCloudPtr;
 
-    // defines the UKF filter state
-    typedef ukfom::mtkwrap< MTK::SO3<double> > RotationType;
-    typedef ukfom::mtkwrap<RotationType::vect_type> TranslationType;
-    MTK_BUILD_MANIFOLD(PoseState,
-        ((TranslationType, position))
-        ((RotationType, orientation))
-    )
-    typedef ukfom::mtkwrap<PoseState> WPoseState;
-    typedef Eigen::Matrix<PoseState::scalar, PoseState::DOF, PoseState::DOF> PoseCovariance;
+    typedef Eigen::Matrix<double, 6, 6> PoseCovariance;
 
     /*! \class Task 
      * \brief The task context provides and requires services. It uses an ExecutionEngine to perform its functions.
@@ -59,7 +54,7 @@ namespace localization
         Eigen::Affine3d last_odometry2body;
         Eigen::Affine3d odometry_at_last_icp;
         boost::shared_ptr< pcl::GeneralizedIterativeClosestPoint<PCLPoint, PCLPoint> > icp;
-        boost::shared_ptr< ukfom::ukf<WPoseState> > ukf;
+        boost::shared_ptr< ukfom::ukf<ukfom::mtkwrap<PoseState>> > ukf;
         PoseCovariance filter_process_noise;
         PCLPointCloudPtr model_cloud;
         base::Time last_icp_match;
@@ -205,23 +200,6 @@ void Task::convertPCLToBasePointCloud(const pcl::PointCloud< PCLPoint >& pcl_pc,
     base_pc.resize(pcl_pc.size());
     for(unsigned i = 0; i < pcl_pc.size(); i++)
         base_pc[i] = pcl_pc[i].getVector3fMap().template cast<Scalar>();
-}
-
-template <typename PoseType>
-PoseType
-measurementUpdate(const PoseType &state)
-{
-    return state;
-}
-
-template <typename PoseType>
-PoseType
-processModel(const PoseType &state, const PoseType &pose_delta)
-{
-    PoseType new_state(state);
-    new_state.position.boxplus(new_state.orientation * pose_delta.position);
-    new_state.orientation.boxplus(MTK::SO3<double>::log(pose_delta.orientation));
-    return new_state;
 }
 
 }
