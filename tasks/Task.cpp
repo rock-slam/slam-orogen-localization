@@ -275,11 +275,19 @@ bool Task::configureHook()
     if (! TaskBase::configureHook())
         return false;
 
-    last_state = PRE_OPERATIONAL;
-    new_state = RUNNING;
-
-    // set icp config
+    // set configs
     gicp_config = _gicp_configuration.get();
+    world_frame = _output_frame_name.value();
+
+    return true;
+}
+
+bool Task::startHook()
+{
+    if (! TaskBase::startHook())
+        return false;
+
+    // initialize ICP algorithm
     icp.reset(new pcl::GeneralizedIterativeClosestPoint<PCLPoint, PCLPoint>());
     icp->setMaxCorrespondenceDistance(gicp_config.max_correspondence_distance);
     icp->setMaximumIterations(gicp_config.maximum_iterations);
@@ -304,12 +312,12 @@ bool Task::configureHook()
     last_odometry2body = Eigen::Affine3d::Identity();
     odometry_at_last_icp = Eigen::Affine3d(base::unknown<double>() * Eigen::Matrix4d::Ones());
     init_odometry = true;
-    
+
     last_icp_match.microseconds = 0;
-    
+
     // reset map point cloud
     model_cloud.reset();
-    
+
     // load initial pointcloud
     if(!_ply_path.value().empty())
     {
@@ -318,18 +326,15 @@ bool Task::configureHook()
         if(ply_reader.read(_ply_path.value(), *pcl_cloud) >= 0)
             setModelPointCloud(pcl_cloud);
         else
+        {
             LOG_ERROR_S << "Failed to load PLY model point cloud!";
+            return false;
+        }
     }
 
-    world_frame = _output_frame_name.value();
+    last_state = PRE_OPERATIONAL;
+    new_state = RUNNING;
 
-    return true;
-}
-
-bool Task::startHook()
-{
-    if (! TaskBase::startHook())
-        return false;
     return true;
 }
 
