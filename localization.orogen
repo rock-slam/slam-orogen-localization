@@ -20,6 +20,7 @@ task_context "Task" do
     # icp configuration
     property('gicp_configuration', '/localization/GICPConfiguration')
 
+    # Diagonal of the pose process noise covariance
     property('process_noise_diagonal', '/base/Vector6d')
 
     # Subsamples the input pointclouds according to this configuration
@@ -29,6 +30,7 @@ task_context "Task" do
     # Name of the frame, of the provided transformations by this component. E.g. body to localization
     property('output_frame_name', 'string', 'localization')
 
+    # If true the result of the alignment will be written to debug_map_pointcloud
     property('write_debug_pointcloud', 'bool', false)
 
     ## input ports
