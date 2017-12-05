@@ -184,10 +184,10 @@ bool Task::performICPOptimization(const PCLPointCloudPtr& sample_pointcoud, cons
     icp->setInputSource(sample_pointcoud);
 
     PCLPointCloud cloud_source_registered;
-    #if PCL_VERSION_COMPARE(<, 1, 9, 0)
+    #if PCL_VERSION_COMPARE(<, 1, 8, 1)
         /** Moves the model to the current measurement frame.
          *  This is nessecary due to a bug in the PCL GICP implementation.
-         *  It is fixed in PCL 1.9 onwards */
+         *  It is fixed in PCL 1.8.1 onwards */
         PCLPointCloudPtr transformed_model(new PCLPointCloud());
         pcl::transformPointCloud(*model_cloud, *transformed_model, transformation_guess.inverse());
         icp->setInputTarget(transformed_model);
@@ -203,7 +203,7 @@ bool Task::performICPOptimization(const PCLPointCloudPtr& sample_pointcoud, cons
     icp_score = icp->getFitnessScore(gicp_config.max_correspondence_distance);
     if(icp->hasConverged() && icp_score <= gicp_config.max_mean_square_error)
     {
-        #if PCL_VERSION_COMPARE(<, 1, 9, 0)
+        #if PCL_VERSION_COMPARE(<, 1, 8, 1)
             result = transformation_guess * Eigen::Affine3d(icp->getFinalTransformation().cast<double>());
         #else
             result = Eigen::Affine3d(icp->getFinalTransformation().cast<double>());
