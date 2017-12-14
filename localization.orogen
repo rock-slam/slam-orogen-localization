@@ -1,52 +1,54 @@
 name "localization"
 
-using_library 'envire'
-using_library 'pcl_registration-1.8'
+using_library 'pcl_registration-1.7'
+using_library 'pcl_io-1.7'
 using_library 'depth_map_preprocessing'
+using_library 'base-logging'
 
 import_types_from 'base'
-import_types_from 'envire'
-import_types_from 'velodyne_lidar/MultilevelLaserScan.h'
 import_types_from 'LocalizationConfig.hpp'
-import_types_from 'graph_slam'
 
 task_context "Task" do
     needs_configuration
 
-    # load environment
-    property('environment_path', 'string', "").
-        doc 'if this property is set, this will be used as the inital environment.'
-    property('start_pose', '/base/samples/RigidBodyState').
-        doc 'start pose of the robot in the map frame'
+    # Load initial point cloud in PLY format
+    property('ply_path', 'string', "")
+
+    # Start pose of the robot in the map frame
+    property('start_pose', '/base/Pose')
 
     # icp configuration
-    property('gicp_configuration', '/localization/GICPConfiguration').
-	doc 'configuration parameters of gicp'
-    property('convert_pc_to_mls', 'bool', false).
-	doc 'convert input pointcloud to mls befor processing'
+    property('gicp_configuration', '/localization/GICPConfiguration')
 
-    property('outputFrameName', 'string', 'localization').
-        doc 'Name of the frame, of the provided transformations by this component. E.g. body to localization'
+    # Diagonal of the pose process noise covariance
+    property('process_noise_diagonal', '/base/Vector6d')
 
+    # Subsamples the input pointclouds according to this configuration
+    property('subsampling', '/localization/SubSampling', :None)
+    property('subsampling_resolution', '/base/Vector3d')
+
+    # Name of the frame, of the provided transformations by this component. E.g. body to localization
+    property('output_frame_name', 'string', 'localization')
+
+    # If true the result of the alignment will be written to debug_map_pointcloud
     property('write_debug_pointcloud', 'bool', false)
 
     ## input ports
-    input_port('envire_map', ro_ptr('std/vector</envire/BinaryEvent>')).
-        needs_reliable_connection.
-        doc 'the envire map'
+    # updates the model pointcloud
+    input_port('model_pointcloud', '/base/samples/Pointcloud')
+
+    # allows an external and unaligned pose update
+    input_port('pose_update', '/base/samples/RigidBodyState')
         
     ## output ports
-    output_port('pose_samples', '/base/samples/RigidBodyState').
-        doc 'timestamped samples of the current pose of the robot.'
+    # timestamped samples of the current pose of the robot
+    output_port('pose_samples', '/base/samples/RigidBodyState')
 
-    output_port('pose_provider_update', '/graph_slam/PoseProviderUpdate').
-	doc 'timestamped update samples for the pose provider task.'
+    # Shows the aligned measurement in the reference map
+    output_port('debug_map_pointcloud', '/base/samples/Pointcloud')
 
-    output_port('debug_map_pointcloud', 'base::samples::Pointcloud').
-        doc 'Pointcloud generated from the input mls map'
-
-    output_port('icp_debug_information', '/localization/ICPDebugInformation').
-	doc 'icp debug information'
+    # icp debug information
+    output_port('icp_debug_information', '/localization/ICPDebugInformation')
 
     ## states
     runtime_states :MISSING_TRANSFORMATION, :ICP_ALIGNMENT_FAILED
@@ -98,25 +100,5 @@ task_context "VelodyneInMLS" do
         align_port("lidar_samples", 0.1)
     end
     
-    port_driven
-end
-
-task_context "PoseProvider" do
-    needs_configuration
-
-    property('outputFrameName', 'string', 'localization').
-        doc 'Name of the frame, of the provided transformations by this component. E.g. body to localization'
-
-    input_port('odometry_samples', '/base/samples/RigidBodyState').
-        doc 'timestamped samples of the odomery based pose of the robot.'
-
-    input_port('pose_provider_update', '/graph_slam/PoseProviderUpdate').
-	doc 'timestamped update samples from the localization task.'
-
-
-    output_port('pose_samples', '/base/samples/RigidBodyState').
-        doc 'timestamped samples of the current pose of the robot.'
-
-
     port_driven
 end

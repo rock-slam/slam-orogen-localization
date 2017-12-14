@@ -4,29 +4,34 @@
 #define LOCALIZATION_TASK_TASK_HPP
 
 #include "localization/TaskBase.hpp"
-
-#include <envire/Orocos.hpp>
-#include <envire/core/EventHandler.hpp>
-#include <envire/maps/MLSGrid.hpp>
 #include <boost/shared_ptr.hpp>
-#include <pcl/registration/gicp.h>
-#include <envire/operators/MLSProjection.hpp>
+#include <pcl/pcl_base.h>
+#include <pcl/point_types.h>
+#include <transformer/Transformer.hpp>
 
-namespace localization {
+namespace pcl
+{
+template <typename PointSource, typename PointTarget>
+class GeneralizedIterativeClosestPoint;
+}
 
-    class Task;
-    typedef pcl::PointCloud<pcl::PointXYZ> PCLPointCloud;
+namespace ukfom
+{
+    template <typename state>
+    class ukf;
+    template <typename manifold>
+    struct mtkwrap;
+}
+
+namespace localization
+{
+    class PoseState;
+
+    typedef pcl::PointXYZ PCLPoint;
+    typedef pcl::PointCloud<PCLPoint> PCLPointCloud;
     typedef typename PCLPointCloud::Ptr PCLPointCloudPtr;
 
-    class MLSEventHandler : public envire::EventHandler
-    {
-    public:
-        MLSEventHandler(Task* task) {this->task = task;}
-    protected:
-        virtual void handle( const envire::Event& event );
-        
-        Task* task;
-    };
+    typedef Eigen::Matrix<double, 6, 6> PoseCovariance;
 
     /*! \class Task 
      * \brief The task context provides and requires services. It uses an ExecutionEngine to perform its functions.
@@ -45,64 +50,64 @@ namespace localization {
     class Task : public TaskBase
     {
 	friend class TaskBase;
-    friend class MLSEventHandler;
     protected:
-        envire::TransformWithUncertainty last_body2odometry;
-        envire::TransformWithUncertainty last_odometry2body;
-        envire::TransformWithUncertainty last_body2world;
-        envire::TransformWithUncertainty map2world;
-        boost::shared_ptr<envire::Environment> env;
-        boost::shared_ptr< pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> > icp;
-        PCLPointCloudPtr map_pointcloud;
-	base::Time last_icp_match;
+        Eigen::Affine3d last_odometry2body;
+        Eigen::Affine3d odometry_at_last_icp;
+        boost::shared_ptr< pcl::GeneralizedIterativeClosestPoint<PCLPoint, PCLPoint> > icp;
+        boost::shared_ptr< ukfom::ukf<ukfom::mtkwrap<PoseState>> > ukf;
+        PoseCovariance filter_process_noise;
+        PCLPointCloudPtr model_cloud;
+        base::Time last_icp_match;
+        base::Time last_odometry_time;
         States last_state;
         States new_state;
-	base::samples::Pointcloud model_cloud;
-	base::samples::Pointcloud aligned_cloud;
-	GICPConfiguration gicp_config;
-	ICPDebugInformation icp_debug;
-    bool init_odometry; 
+        GICPConfiguration gicp_config;
+        ICPDebugInformation icp_debug;
+        bool init_odometry;
 
-        std::string bodyName;
-        std::string worldName;
+        std::string body_frame;
+        std::string world_frame;
 
-        bool gotNewMls;
-	
-	/**
-	 * Creates a pcl pointcloud from a mls map
-	 */
-	void createPointcloudFromMLS(PCLPointCloudPtr pointcloud, envire::MultiLevelSurfaceGrid* mls_grid);
-	
-	/**
-	 * Checks if a new icp run should be made.
-	 */
-        bool newICPRunPossible(const Eigen::Affine3d& body2odometry) const;
-	
         /**
-         * Computes a pointcloud from a given MLS grid.
-         * The incoming sample pointclouds will be aligned to this model pointcould.
+         * Updates the model point cloud
          */
-        void updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid);
+        void setModelPointCloud(const PCLPointCloudPtr& pc);
+
+        /**
+        * Checks if a new icp run should be made.
+        */
+        bool newICPRunPossible(const base::Time& current_time) const;
 
         /**
          * Aligns the given sample pointcloud to the current map model.
-         * A current odometry sample is mandatory for this step.
          */
-        void alignPointcloud(const base::Time& ts, const std::vector< base::Vector3d >& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry);
-        void alignPointcloud(const base::Time& ts, const std::vector< Eigen::Vector3d >& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry);
-        void alignPointcloud(const base::Time& ts, const PCLPointCloudPtr sample_pointcoud, const envire::TransformWithUncertainty& body2odometry);
-	void alignPointcloudAsMLS(const base::Time& ts, const std::vector< base::Vector3d >& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry);
+        void alignPointcloud(const base::Time& ts, const PCLPointCloudPtr& sample_pointcoud);
 
         /**
-         * Creates a mask to sub sample a pointcloud.
+         * Runs the ICP alignment
          */
-        void computeSampleMask(std::vector<bool>& mask, unsigned pointcloud_size, unsigned samples_count);
+        bool performICPOptimization(const PCLPointCloudPtr& sample_pointcoud, const Eigen::Affine3d& transformation_guess, Eigen::Affine3d& result, double &icp_score);
 
         /**
-         * Updates the current position using the given odometry reading
+         * Updates the current position
          * */
-        void updatePosition(const base::Time &curTime, const Eigen::Affine3d &curBody2Odometry, bool write = false);
+        void writeCurrentState(const base::Time &curTime);
+
+        /**
+         * Helper methods to convert form base pointcloud to PCL pointcloud and vise versa
+         */
+        template<typename PCLPoint, typename Scalar, int Options>
+        void convertPCLToBasePointCloud(const pcl::PointCloud<PCLPoint>& pcl_pc, std::vector< Eigen::Matrix<Scalar,3,1,Options> >& base_pc) const;
+        template<typename PCLPoint, typename Scalar, int Options>
+        void convertBaseToPCLPointCloud(const std::vector< Eigen::Matrix<Scalar,3,1,Options> >& base_pc, pcl::PointCloud<PCLPoint>& pcl_pc) const;
+
     public:
+
+        /**
+         * Integrates the odometry information as a delta pose step
+         */
+        void integrateOdometry(const base::Time &ts, const transformer::Transformation &tr);
+
         /** TaskContext constructor for Task
          * \param name Name of the task. This name needs to be unique to make it identifiable via nameservices.
          * \param initial_state The initial TaskState of the TaskContext. Default is Stopped state.
@@ -118,7 +123,7 @@ namespace localization {
 
         /** Default deconstructor of Task
          */
-	~Task();
+        ~Task();
 
         /** This hook is called by Orocos when the state machine transitions
          * from PreOperational to Stopped. If it returns false, then the
@@ -178,7 +183,25 @@ namespace localization {
          */
         void cleanupHook();
     };
+
+template<typename PCLPoint, typename Scalar, int Options>
+void Task::convertBaseToPCLPointCloud(const std::vector< Eigen::Matrix<Scalar,3,1,Options> >& base_pc, pcl::PointCloud< PCLPoint >& pcl_pc) const
+{
+    pcl_pc.clear();
+    pcl_pc.resize(base_pc.size());
+    for(unsigned i = 0; i < base_pc.size(); i++)
+        pcl_pc[i].getVector3fMap() = base_pc[i].template cast<float>();
+}
+
+template<typename PCLPoint, typename Scalar, int Options>
+void Task::convertPCLToBasePointCloud(const pcl::PointCloud< PCLPoint >& pcl_pc, std::vector< Eigen::Matrix<Scalar,3,1,Options> >& base_pc) const
+{
+    base_pc.clear();
+    base_pc.resize(pcl_pc.size());
+    for(unsigned i = 0; i < pcl_pc.size(); i++)
+        base_pc[i] = pcl_pc[i].getVector3fMap().template cast<Scalar>();
+}
+
 }
 
 #endif
-

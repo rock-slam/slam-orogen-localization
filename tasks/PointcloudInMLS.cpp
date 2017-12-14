@@ -20,16 +20,6 @@ PointcloudInMLS::~PointcloudInMLS()
 {
 }
 
-void PointcloudInMLS::odometryCallback(base::Time ts)
-{
-    Eigen::Affine3d body2Odometry;
-    if(!_body2odometry.get(ts, body2Odometry, false))
-        return;
-
-    updatePosition(ts, body2Odometry);
-}
-
-
 void PointcloudInMLS::pointcloud_samplesTransformerCallback(const base::Time &ts, const ::base::samples::Pointcloud &pointcloud_samples_sample)
 {
     Eigen::Affine3d pointcloud2body;
@@ -39,27 +29,25 @@ void PointcloudInMLS::pointcloud_samplesTransformerCallback(const base::Time &ts
         new_state = TaskBase::MISSING_TRANSFORMATION;
         return;
     }
-    envire::TransformWithUncertainty body2odometry;
-    if (!_body2odometry.get(ts, body2odometry, true))
-    {
-        RTT::log(RTT::Error) << "skip, have no body2odometry transformation sample!" << RTT::endlog();
-        new_state = TaskBase::MISSING_TRANSFORMATION;
-        return;
-    }
-
-    if(init_odometry)
-    {
-            init_odometry = false;
-            last_body2odometry = body2odometry;
-            last_odometry2body = body2odometry.inverse();
-            return;
-    }
     
-    if(newICPRunPossible(body2odometry.getTransform()))
+    if(newICPRunPossible(ts))
     {
-        //save pointcloud for processing later on
-        pc = PointcloudWithPose(ts, pointcloud_samples_sample, pointcloud2body, body2odometry);
-        hasNewPointCloud = true;
+        PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
+        if(!pointcloud2body.matrix().isApprox(Eigen::Matrix4d::Identity()))
+        {
+            // apply transformation
+            std::vector<base::Vector3d> transformed_pointcloud;
+            transformed_pointcloud.reserve(pointcloud_samples_sample.points.size());
+            for(std::vector<base::Vector3d>::const_iterator it = pointcloud_samples_sample.points.begin(); it != pointcloud_samples_sample.points.end(); it++)
+            {
+                transformed_pointcloud.push_back(pointcloud2body * (*it));
+            }
+            convertBaseToPCLPointCloud(transformed_pointcloud, *pcl_pointcloud);
+        }
+        else
+            convertBaseToPCLPointCloud(pointcloud_samples_sample.points, *pcl_pointcloud);
+
+        alignPointcloud(ts, pcl_pointcloud);
     }
 }
 
@@ -73,8 +61,9 @@ bool PointcloudInMLS::configureHook()
     if (! PointcloudInMLSBase::configureHook())
         return false;
     
-    bodyName = _body_frame.get();
-    _body2odometry.registerUpdateCallback(boost::bind(&PointcloudInMLS::odometryCallback, this, _1));
+    body_frame = _body_frame.get();
+
+    _transformer.registerTransformCallback(_body2odometry, boost::bind(&Task::integrateOdometry, this, _1, _2));
     
     return true;
 }
@@ -88,26 +77,6 @@ void PointcloudInMLS::updateHook()
 {
     //process all callbacks
     PointcloudInMLSBase::updateHook();
-
-    //if we got a new pointcloud, perform alignment on the latest one
-    if(hasNewPointCloud)
-    {
-        if(!pc.pointcloud2body.matrix().isApprox(Eigen::Matrix4d::Identity()))
-        {
-            // apply transformation
-            std::vector<base::Vector3d> transformed_pointcloud;
-            transformed_pointcloud.reserve(pc.pointcloud_sample.points.size());
-            for(std::vector<base::Vector3d>::const_iterator it = pc.pointcloud_sample.points.begin(); it != pc.pointcloud_sample.points.end(); it++)
-            {
-                transformed_pointcloud.push_back(pc.pointcloud2body * (*it));
-            }
-            alignPointcloud(pc.time, transformed_pointcloud, pc.body2odometry);
-        }
-        else
-            alignPointcloud(pc.time, pc.pointcloud_sample.points, pc.body2odometry); 
-        
-        hasNewPointCloud = false;
-    }
 }
 void PointcloudInMLS::errorHook()
 {

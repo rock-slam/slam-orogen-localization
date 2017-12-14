@@ -2,344 +2,269 @@
 
 #include "Task.hpp"
 #include <base/samples/Pointcloud.hpp>
+#include <pcl/pcl_config.h>
+#include <pcl/common/transforms.h>
+#include <pcl/common/io.h>
+#include <pcl/io/ply_io.h>
+#include <base-logging/Logging.hpp>
+#include <base/TimeMark.hpp>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/registration/gicp.h>
+
+#include <mtk/types/SOn.hpp>
+#include <mtk/types/vect.hpp>
+#include <ukfom/mtkwrap.hpp>
+#include <mtk/startIdx.hpp>
+#include <mtk/build_manifold.hpp>
+#include <ukfom/ukf.hpp>
+#include <ukfom/mtkwrap.hpp>
+
+namespace localization
+{
+    template <typename PoseType>
+    PoseType
+    measurementUpdate(const PoseType &state)
+    {
+        return state;
+    }
+
+    template <typename PoseType>
+    PoseType
+    processModel(const PoseType &state, const PoseType &pose_delta)
+    {
+        PoseType new_state(state);
+        new_state.position.boxplus(new_state.orientation * pose_delta.position);
+        new_state.orientation.boxplus(MTK::SO3<double>::log(pose_delta.orientation));
+        return new_state;
+    }
+
+    // defines the UKF filter state
+    typedef ukfom::mtkwrap< MTK::SO3<double> > RotationType;
+    typedef ukfom::mtkwrap<RotationType::vect_type> TranslationType;
+    MTK_BUILD_MANIFOLD(PoseState,
+        ((TranslationType, position))
+        ((RotationType, orientation))
+    )
+    typedef ukfom::mtkwrap<PoseState> WPoseState;
+}
 
 using namespace localization;
 
 Task::Task(std::string const& name)
-    : TaskBase(name), bodyName("body"), worldName("world")
+    : TaskBase(name)
 {
+    base::Vector6d process_noise;
+    process_noise << 0.0025, 0.0025, 0.0025, 0.0016, 0.0016, 0.0016;
+    _process_noise_diagonal.set(process_noise);
 }
 
 Task::Task(std::string const& name, RTT::ExecutionEngine* engine)
-    : TaskBase(name, engine), bodyName("body"), worldName("world")
+    : TaskBase(name, engine)
 {
+    base::Vector6d process_noise;
+    process_noise << 0.0025, 0.0025, 0.0025, 0.0016, 0.0016, 0.0016;
+    _process_noise_diagonal.set(process_noise);
 }
 
 Task::~Task()
 {
 }
 
-void MLSEventHandler::handle( const envire::Event& event )
+void Task::setModelPointCloud(const PCLPointCloudPtr& pc)
 {
-    envire::MultiLevelSurfaceGrid* mls_grid = dynamic_cast<envire::MultiLevelSurfaceGrid*>(event.a.get());
-    if(event.type == envire::event::ITEM && 
-       (event.operation == envire::event::ADD || event.operation == envire::event::UPDATE) && 
-        mls_grid)
-    {
-        task->gotNewMls = true;
-    }
+    model_cloud = pc;
+    icp->setInputTarget(model_cloud);
 }
 
-void Task::createPointcloudFromMLS(PCLPointCloudPtr pointcloud, envire::MultiLevelSurfaceGrid* mls_grid)
-{
-    pointcloud->clear();
-    
-    float vertical_distance = (mls_grid->getScaleX() + mls_grid->getScaleY()) * 0.5;
-    if(vertical_distance <= 0.0)
-        vertical_distance = 0.1;
-    
-    // create pointcloud from mls
-    for(size_t x=0;x<mls_grid->getCellSizeX();x++)
-    {
-        for(size_t y=0;y<mls_grid->getCellSizeY();y++)
-        {
-            for( envire::MLSGrid::iterator cit = mls_grid->beginCell(x,y); cit != mls_grid->endCell(); cit++ )
-            {
-                envire::MLSGrid::SurfacePatch p( *cit );
-                
-                Eigen::Vector3d cellPosWorld = mls_grid->fromGrid(x, y, mls_grid->getEnvironment()->getRootNode());
-                pcl::PointXYZ point;
-                point.x = cellPosWorld.x();
-                point.y = cellPosWorld.y();
-                point.z = cellPosWorld.z();
-                if(p.isHorizontal())
-                {
-                    point.z = cellPosWorld.z() + p.mean;
-                    pointcloud->push_back(point);
-                }
-                else if(p.isVertical())
-                {
-                    float min_z = (float)p.getMinZ(0);
-                    float max_z = (float)p.getMaxZ(0);
-                    for(float z = min_z; z <= max_z; z += vertical_distance)
-                    {
-                        point.z = cellPosWorld.z() + z;
-                        pointcloud->push_back(point);
-                    }
-                }
-            }
-        }
-    }
-}
-
-void Task::updateICPModelFromMap(envire::MultiLevelSurfaceGrid* mls_grid)
-{
-    map_pointcloud->clear();
-    model_cloud.points.clear();
-    model_cloud.colors.clear();
-    Eigen::Affine3f map2world_affine(map2world.getTransform());
-    
-    createPointcloudFromMLS(map_pointcloud, mls_grid);
-    
-    for(unsigned i = 0; i < map_pointcloud->size(); i++)
-    {
-	map_pointcloud->at(i).getVector3fMap() = map2world_affine * map_pointcloud->at(i).getVector3fMap();
-	model_cloud.points.push_back(map_pointcloud->at(i).getVector3fMap().cast<double>());
-	model_cloud.colors.push_back(base::Vector4d(0.0, 1.0, 0.0, 1.0));
-    }
-    
-    _debug_map_pointcloud.write(model_cloud);
-    
-    if(map_pointcloud->size())
-    {
-	PCLPointCloudPtr target_pointcloud(new PCLPointCloud());
-	target_pointcloud->points = map_pointcloud->points;
-        icp->setInputTarget(target_pointcloud);
-    }
-
-}
-
-void Task::alignPointcloudAsMLS(const base::Time& ts, const std::vector< base::Vector3d >& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry)
-{
-    if(sample_pointcloud.size() == 0)
-	return;
-    boost::shared_ptr<envire::Environment> pointcloud_env;
-    pointcloud_env.reset(new envire::Environment());
-    envire::MLSProjection* pointcloud_projection = new envire::MLSProjection();
-    pointcloud_projection->useNegativeInformation(false);
-    pointcloud_projection->useUncertainty(true);
-    double grid_size = 200.0;
-    double cell_resolution = 0.1;
-    double grid_count = grid_size / cell_resolution;
-    envire::MultiLevelSurfaceGrid* pointcloud_grid = new envire::MultiLevelSurfaceGrid(grid_count, grid_count, cell_resolution, cell_resolution, -0.5 * grid_size, -0.5 * grid_size);
-    pointcloud_grid->getConfig().updateModel = envire::MLSConfiguration::KALMAN;
-    pointcloud_grid->getConfig().gapSize = 0.5;
-    pointcloud_grid->getConfig().thickness = 0.05;
-    pointcloud_env->attachItem(pointcloud_grid, pointcloud_env->getRootNode());
-    pointcloud_env->addOutput(pointcloud_projection, pointcloud_grid);
-    
-    // create envire pointcloud
-    envire::Pointcloud* pc = new envire::Pointcloud();
-    pc->vertices.reserve(sample_pointcloud.size());
-    for(unsigned i = 0; i < sample_pointcloud.size(); i++)
-	pc->vertices.push_back(sample_pointcloud[i]);
-    
-    // update mls
-    envire::MLSGrid* grid = pointcloud_projection->getOutput<envire::MLSGrid*>();
-    if(!grid)
-    {
-	RTT::log(RTT::Error) << "Missing mls grid in pointcloud environment." << RTT::endlog();
-	return;
-    }
-    grid->clear();
-    pointcloud_env->attachItem(pc, pointcloud_env->getRootNode());
-    pointcloud_env->addInput(pointcloud_projection, pc);
-    pointcloud_projection->updateAll();
-        
-    // remove inputs
-    pointcloud_env->removeInput(pointcloud_projection, pc);
-    pointcloud_env->detachItem(pc, true);
-
-    // create pointcloud from mls_grid
-    PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
-    createPointcloudFromMLS(pcl_pointcloud, grid);
-    
-    // create debug pointcloud
-    aligned_cloud.points.clear();
-    aligned_cloud.colors.clear();
-    aligned_cloud.points.reserve(pcl_pointcloud->size());
-    for(unsigned i = 0; i < pcl_pointcloud->size(); i++)
-    {
-	Eigen::Vector3f point = pcl_pointcloud->at(i).getVector3fMap();
-    	aligned_cloud.points.push_back(base::Vector3d(point.x(), point.y(), point.z()));
-    }
-    aligned_cloud.colors.resize(aligned_cloud.points.size(), base::Vector4d(1.0, 0.0, 0.0, 1.0));
-    
-    alignPointcloud(ts, pcl_pointcloud, body2odometry);
-}
-
-void Task::alignPointcloud(const base::Time &ts, const std::vector<base::Vector3d>& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry)
-{
-    if(_convert_pc_to_mls.get())
-	alignPointcloudAsMLS(ts, sample_pointcloud, body2odometry);
-    else
-    {
-	aligned_cloud.points = sample_pointcloud;
-	aligned_cloud.colors.resize(sample_pointcloud.size(), base::Vector4d(1.0, 0.0, 0.0, 1.0));
-	PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
-	pcl_pointcloud->reserve(std::max((u_int64_t)sample_pointcloud.size(), (u_int64_t)gicp_config.max_input_sample_count));
-	std::vector<bool> mask;
-	computeSampleMask(mask, sample_pointcloud.size(), gicp_config.max_input_sample_count);
-	pcl::PointXYZ point;
-	for(unsigned i = 0; i < sample_pointcloud.size(); i++)
-	{
-	    if(mask[i])
-	    {
-		point.getVector3fMap() = sample_pointcloud[i].cast<float>();
-		pcl_pointcloud->push_back(point);
-	    }
-	}
-	alignPointcloud(ts, pcl_pointcloud, body2odometry);
-    }
-}
-
-void Task::alignPointcloud(const base::Time &ts, const std::vector<Eigen::Vector3d>& sample_pointcloud, const envire::TransformWithUncertainty& body2odometry)
-{
-    aligned_cloud.points.clear();
-    aligned_cloud.colors.resize(sample_pointcloud.size(), base::Vector4d(1.0, 0.0, 0.0, 1.0));
-    PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
-    pcl_pointcloud->reserve(std::max((u_int64_t)sample_pointcloud.size(), (u_int64_t)gicp_config.max_input_sample_count));
-    std::vector<bool> mask;
-    computeSampleMask(mask, sample_pointcloud.size(), gicp_config.max_input_sample_count);
-    pcl::PointXYZ point;
-    for(unsigned i = 0; i < sample_pointcloud.size(); i++)
-    {
-        if(mask[i])
-        {
-            point.getVector3fMap() = sample_pointcloud[i].cast<float>();
-            pcl_pointcloud->push_back(point);
-        }
-        aligned_cloud.points.push_back(sample_pointcloud[i]);
-    }
-    alignPointcloud(ts, pcl_pointcloud, body2odometry);
-}
-
-void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr sample_pointcoud, const envire::TransformWithUncertainty& body2odometry)
+void Task::alignPointcloud(const base::Time& ts, const PCLPointCloudPtr& sample_pointcoud)
 {
     if(sample_pointcoud->empty())
     {
-        std::cout << "Input cloud is empty" << std::endl;
+        LOG_WARN_S << "Input cloud is empty!";
         return;
     }
-    if(!icp->getInputTarget().get())
+    if(!model_cloud.get())
     {
-        std::cout << "No Input Target" << std::endl;
+        LOG_WARN_S << "Model cloud is missing!";
         return;
     }
-    Eigen::Affine3d odometry_delta = last_odometry2body.getTransform() * body2odometry.getTransform();
-    Eigen::Affine3d transformation_guess = last_body2world.getTransform() * odometry_delta;
-    last_icp_match = base::Time::now();
 
-    icp->setInputSource(sample_pointcoud);
-    
-    /** stupid way to fix a pcl bug */
-    for(unsigned i = 0; i < icp->target_->size(); i++)
+    // sub sample measurement
+    PCLPointCloudPtr input_pointcloud;
+    if(_subsampling.value() == localization::VoxelGrid)
     {
-	pcl::PointXYZ& point = const_cast<pcl::PointXYZ&>(icp->target_->at(i));
-	point.getVector3fMap() = transformation_guess.inverse().cast<float>() * map_pointcloud->at(i).getVector3fMap();
+        input_pointcloud.reset(new PCLPointCloud);
+        pcl::VoxelGrid<PCLPoint> voxel_grid;
+        voxel_grid.setLeafSize(_subsampling_resolution.value().x(),_subsampling_resolution.value().y(),_subsampling_resolution.value().z());
+        voxel_grid.setInputCloud(sample_pointcoud);
+        voxel_grid.filter(*input_pointcloud);
     }
-    icp->tree_->setInputCloud(icp->target_);
-    /** ** */
+    else
+        input_pointcloud = sample_pointcoud;
 
-    std::cout << "Doing ICP match " << std::endl;
+    odometry_at_last_icp = last_odometry2body;
+    last_icp_match = ts;
 
-    base::Time start = base::Time::now();
-    // Perform the alignment
-    PCLPointCloud cloud_source_registered;
-    icp->align(cloud_source_registered);//, transformation_guess.matrix().cast<float>());
-    double fitness_score = icp->getFitnessScore();
-    if(icp->hasConverged() && fitness_score <= gicp_config.max_mean_square_error)
+    Eigen::Affine3d transformation_guess;
+    transformation_guess = ukf->mu().orientation;
+    transformation_guess.pretranslate( ukf->mu().position );
+
+    base::TimeMark icp_run("ICP alignment");
+    Eigen::Affine3d icp_result;
+    double icp_score;
+    LOG_INFO_S << "Run ICP optimization";
+    if(performICPOptimization(input_pointcloud, transformation_guess, icp_result, icp_score))
     {
-	new_state = RUNNING;
-	RTT::log(RTT::Error) << "ICP alignment successful. FitnessScore: " << fitness_score<< RTT::endlog();
-	
-        Eigen::Affine3d transformation(icp->getFinalTransformation().cast<double>());
-        
-        last_body2world.setTransform(transformation_guess * transformation);
+        new_state = RUNNING;
+        LOG_INFO_S << "ICP alignment successful. ICP score: " << icp_score;
+        LOG_INFO_S << "Got new ICP match " << icp_result.translation().transpose();
+        icp_debug.successful_alignments++;
 
-        last_body2odometry = body2odometry;
-        last_odometry2body = body2odometry.inverse();
-        
-        std::cout << "Got new ICP match " << last_body2world.getTransform().translation().transpose() << std::endl;
-	
-	icp_debug.successful_alignments++;
-        
-        //write out current odometry sample
-        updatePosition(ts, last_body2odometry.getTransform(), true);
+        WPoseState icp_result_;
+        icp_result_.position = TranslationType(icp_result.translation());
+        icp_result_.orientation = RotationType(icp_result.linear());
+        PoseCovariance icp_cov = 0.01 * PoseCovariance::Identity();
+        ukf->update(icp_result_, boost::bind(measurementUpdate<WPoseState>, _1), icp_cov);
     }
     else
     {
-        std::cout << "ICP failed " << std::endl;
-        RTT::log(RTT::Error) << "ICP alignment failed, perhaps a model update is necessary. FitnessScore: " << fitness_score << RTT::endlog();
+        LOG_WARN_S << "ICP alignment failed, perhaps a model update is necessary. ICP score: " << icp_score;
         new_state = ICP_ALIGNMENT_FAILED;
-	icp_debug.failed_alignments++;
+        icp_debug.failed_alignments++;
     }
-    base::Time end = base::Time::now();
-    
-    icp_debug.time = ts;
-    icp_debug.last_fitness_score = fitness_score;
-    _icp_debug_information.write(icp_debug);
 
-    std::cout << "icp took " << end-start << std::endl;
+    LOG_INFO_S << icp_run;
+
+    //write out current pose sample
+    writeCurrentState(ts);
+
+    icp_debug.time = ts;
+    icp_debug.last_fitness_score = icp_score;
+    icp_debug.icp_alignment_time = (double)icp_run.cycles() / (double)CLOCKS_PER_SEC;
+    _icp_debug_information.write(icp_debug);
     
+    // write debug pointcloud
     if(_write_debug_pointcloud)
     {
-	for(unsigned i = 0; i < aligned_cloud.points.size(); i++)
-	{
-	    aligned_cloud.points[i] = last_body2world.getTransform() * aligned_cloud.points[i];
-	}
-	base::samples::Pointcloud debug_cloud;
-	debug_cloud.points = model_cloud.points;
-	debug_cloud.colors = model_cloud.colors;
-	debug_cloud.points.insert(debug_cloud.points.end(), aligned_cloud.points.begin(), aligned_cloud.points.end());
-	debug_cloud.colors.insert(debug_cloud.colors.end(), aligned_cloud.colors.begin(), aligned_cloud.colors.end());
-	_debug_map_pointcloud.write(debug_cloud);
-    }
-}
+        base::samples::Pointcloud debug_cloud;
+        convertPCLToBasePointCloud(*model_cloud, debug_cloud.points);
+        debug_cloud.colors.resize(debug_cloud.points.size(), base::Vector4d(0.9,0.9,0.9,1.));
 
-void Task::updatePosition(const base::Time &curTime, const Eigen::Affine3d &curBody2Odometry, bool write)
-{
-    if(!write)
-        return;
-    
-    //comput delta between odometry position at the time of the last ICP match and the current odometry position
-    Eigen::Affine3d curBody2BodyICP = last_odometry2body.getTransform() * curBody2Odometry;
-//     Eigen::Affine3d odometry_delta = last_odometry2body.getTransform() * curBody2Odometry;
-    base::samples::RigidBodyState sample_out;
-    sample_out.invalidate();
-    sample_out.time = curTime;
-    sample_out.setTransform(last_body2world.getTransform() * curBody2BodyICP);
-    sample_out.sourceFrame = bodyName;
-    sample_out.targetFrame = worldName;
-    _pose_samples.write(sample_out);
-    graph_slam::PoseProviderUpdate pose_provider_update;
-    pose_provider_update.body2world = sample_out.getPose();
-    pose_provider_update.body2odometry = base::Pose(curBody2Odometry);
-    _pose_provider_update.write(pose_provider_update);
-}
-
-void Task::computeSampleMask(std::vector<bool>& mask, unsigned pointcloud_size, unsigned samples_count)
-{
-    mask.clear();
-    if(samples_count == 0)
-        return;
-    if(samples_count >= pointcloud_size)
-    {
-        mask.resize(pointcloud_size, true);
-        return;
-    }
-    
-    mask.resize(pointcloud_size, false);
-    unsigned samples_drawn = 0;
-    
-    while(samples_drawn < samples_count)
-    {
-        unsigned index = rand() % pointcloud_size;
-        if(mask[index] == false)
+        PCLPointCloud transformed_measurement;
+        std::vector<Eigen::Vector3d> aligned_cloud;
+        if(new_state != ICP_ALIGNMENT_FAILED)
         {
-            mask[index] = true;
-            samples_drawn++;
+            Eigen::Affine3d current_pose;
+            current_pose = ukf->mu().orientation;
+            current_pose.pretranslate( ukf->mu().position );
+            pcl::transformPointCloud(*input_pointcloud, transformed_measurement, current_pose);
+            convertPCLToBasePointCloud(transformed_measurement, aligned_cloud);
+            std::vector<Eigen::Vector4d> aligned_cloud_color(aligned_cloud.size(), base::Vector4d(0.,1.,0.,1.));
+            debug_cloud.points.insert(debug_cloud.points.end(), aligned_cloud.begin(), aligned_cloud.end());
+            debug_cloud.colors.insert(debug_cloud.colors.end(), aligned_cloud_color.begin(), aligned_cloud_color.end());
         }
+
+        PCLPointCloud transformed_measurement_guess;
+        std::vector<Eigen::Vector3d> aligned_cloud_guess;
+        pcl::transformPointCloud(*input_pointcloud, transformed_measurement_guess, transformation_guess);
+        convertPCLToBasePointCloud(transformed_measurement_guess, aligned_cloud_guess);
+        base::Vector4d guess_color(1.,1.,0.,0.8);
+        if(new_state == ICP_ALIGNMENT_FAILED)
+            guess_color = base::Vector4d(1.,0.,0.,0.8);
+        std::vector<Eigen::Vector4d> aligned_cloud_guess_color(aligned_cloud_guess.size(), guess_color);
+        debug_cloud.points.insert(debug_cloud.points.end(), aligned_cloud_guess.begin(), aligned_cloud_guess.end());
+        debug_cloud.colors.insert(debug_cloud.colors.end(), aligned_cloud_guess_color.begin(), aligned_cloud_guess_color.end());
+
+        _debug_map_pointcloud.write(debug_cloud);
     }
 }
 
-bool Task::newICPRunPossible(const Eigen::Affine3d& body2odometry) const
+bool Task::performICPOptimization(const PCLPointCloudPtr& sample_pointcoud, const Eigen::Affine3d& transformation_guess, Eigen::Affine3d& result, double &icp_score)
 {
-    if((last_body2odometry.getTransform().inverse() * body2odometry).translation().norm() > gicp_config.icp_match_interval || (base::Time::now() - last_icp_match).toSeconds() > gicp_config.icp_match_interval_time)
-	return true;
+    icp->setInputSource(sample_pointcoud);
+
+    PCLPointCloud cloud_source_registered;
+    #if PCL_VERSION_COMPARE(<, 1, 8, 1)
+        /** Moves the model to the current measurement frame.
+         *  This is nessecary due to a bug in the PCL GICP implementation.
+         *  It is fixed in PCL 1.8.1 onwards */
+        PCLPointCloudPtr transformed_model(new PCLPointCloud());
+        pcl::transformPointCloud(*model_cloud, *transformed_model, transformation_guess.inverse());
+        icp->setInputTarget(transformed_model);
+        /** ** */
+
+        // Perform the alignment
+        icp->align(cloud_source_registered);
+    #else
+        // Perform the alignment
+        icp->align(cloud_source_registered, transformation_guess.matrix().cast<float>());
+    #endif
+
+    icp_score = icp->getFitnessScore(gicp_config.max_correspondence_distance);
+    if(icp->hasConverged() && icp_score <= gicp_config.max_mean_square_error)
+    {
+        #if PCL_VERSION_COMPARE(<, 1, 8, 1)
+            result = transformation_guess * Eigen::Affine3d(icp->getFinalTransformation().cast<double>());
+        #else
+            result = Eigen::Affine3d(icp->getFinalTransformation().cast<double>());
+        #endif
+        return true;
+    }
     return false;
 }
 
+void Task::writeCurrentState(const base::Time &curTime)
+{
+    //comput delta between odometry position at the time of the last ICP match and the current odometry position
+    base::samples::RigidBodyState sample_out;
+    sample_out.invalidate();
+    sample_out.time = curTime;
+    sample_out.position = ukf->mu().position;
+    sample_out.orientation = ukf->mu().orientation;
+    sample_out.cov_position = ukf->sigma().block(0,0,3,3);
+    sample_out.cov_orientation = ukf->sigma().block(3,3,3,3);
+    sample_out.sourceFrame = body_frame;
+    sample_out.targetFrame = world_frame;
+    _pose_samples.write(sample_out);
+}
+
+bool Task::newICPRunPossible(const base::Time& current_time) const
+{
+    if(!odometry_at_last_icp.matrix().allFinite() ||
+      (last_odometry2body * odometry_at_last_icp).translation().norm() > gicp_config.icp_match_interval ||
+      (current_time - last_icp_match).toSeconds() > gicp_config.icp_match_interval_time)
+        return true;
+    return false;
+}
+
+void Task::integrateOdometry(const base::Time& ts, const transformer::Transformation& tr)
+{
+    Eigen::Affine3d body2odometry;
+    if (!tr.get(ts, body2odometry))
+    {
+        RTT::log(RTT::Error) << "skip, have no body2odometry transformation sample!" << RTT::endlog();
+        new_state = TaskBase::MISSING_TRANSFORMATION;
+        return;
+    }
+
+    if(init_odometry)
+    {
+        init_odometry = false;
+        last_odometry2body = body2odometry.inverse();
+        return;
+    }
+
+    Eigen::Affine3d odometry_delta = last_odometry2body * body2odometry;
+    double delta_t = (ts - last_odometry_time).toSeconds();
+    last_odometry2body = body2odometry.inverse();
+    last_odometry_time = ts;
+
+    // UKF prediction step
+    WPoseState odometry_delta_;
+    odometry_delta_.position = TranslationType(odometry_delta.translation());
+    odometry_delta_.orientation = RotationType(odometry_delta.linear());
+    ukf->predict(boost::bind(processModel<WPoseState>, _1, odometry_delta_),  ukfom::ukf<WPoseState>::cov(delta_t * filter_process_noise));
+}
 
 /// The following lines are template definitions for the various state machine
 // hooks defined by Orocos::RTT. See Task.hpp for more detailed
@@ -349,83 +274,92 @@ bool Task::configureHook()
 {
     if (! TaskBase::configureHook())
         return false;
-    
-    last_state = PRE_OPERATIONAL;
-    new_state = RUNNING;
 
-    // set inital transformations
-    last_body2world.setTransform(_start_pose.get().getTransform());
-    last_body2odometry = envire::TransformWithUncertainty::Identity();
-    last_odometry2body = envire::TransformWithUncertainty::Identity();
-    map2world = envire::TransformWithUncertainty::Identity();
-    init_odometry = true;
-    
-    last_icp_match.microseconds = 0;
-    
-    // reset map point cloud
-    map_pointcloud.reset(new PCLPointCloud());
-
-    // setup environment
-    env.reset(new envire::Environment());
-    env->addEventHandler(new MLSEventHandler(this));
-
-    // set icp config
+    // set configs
     gicp_config = _gicp_configuration.get();
-    icp.reset(new pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ>());
-    icp->setMaxCorrespondenceDistance(gicp_config.max_correspondence_distance);
-    icp->setMaximumIterations(gicp_config.maximum_iterations);
-    icp->setTransformationEpsilon(gicp_config.transformation_epsilon);
-    icp->setEuclideanFitnessEpsilon(gicp_config.euclidean_fitness_epsilon);
-    icp->setCorrespondenceRandomness(gicp_config.correspondence_randomness);
-    icp->setMaximumOptimizerIterations(gicp_config.maximum_optimizer_iterations);
-    icp->setRotationEpsilon(gicp_config.rotation_epsilon);
-    
-    // load inital environment
-    if(!_environment_path.get().empty())
-    {
-        boost::shared_ptr<envire::Environment> inital_env(envire::Environment::unserialize(_environment_path));
-	try
-	{
-	    if(!inital_env.get())
-		throw std::runtime_error("couldn't load inital environment.");
-	    boost::intrusive_ptr<envire::MLSGrid> mls_grid = inital_env->getItem<envire::MLSGrid>();
-            if(!mls_grid)
-                throw std::runtime_error("Initial environment did not contain a mls");
-	    updateICPModelFromMap(mls_grid.get());
-	    RTT::log(RTT::Info) << "Successfully loaded inital multi-level surface grid." << RTT::endlog();
-	}
-	catch(std::runtime_error e)
-	{
-	    RTT::log(RTT::Error) << "Couldn't load inital multi-level surface grid: " << e.what() << RTT::endlog();
-	}
-    }
-    gotNewMls = false;
-    worldName = _outputFrameName.get();
+    world_frame = _output_frame_name.value();
 
     return true;
 }
+
 bool Task::startHook()
 {
     if (! TaskBase::startHook())
         return false;
+
+    // initialize ICP algorithm
+    icp.reset(new pcl::GeneralizedIterativeClosestPoint<PCLPoint, PCLPoint>());
+    icp->setMaxCorrespondenceDistance(gicp_config.max_correspondence_distance);
+    icp->setMaximumIterations(gicp_config.maximum_iterations);
+    icp->setTransformationEpsilon(gicp_config.transformation_epsilon);
+    icp->setCorrespondenceRandomness(gicp_config.correspondence_randomness);
+    icp->setMaximumOptimizerIterations(gicp_config.maximum_optimizer_iterations);
+    icp->setRotationEpsilon(gicp_config.rotation_epsilon);
+
+    // initialize filter
+    double pos_var = pow(gicp_config.max_correspondence_distance, 2.);
+    double rot_var = 2.5; // sigma of 90 degree
+    PoseCovariance initial_cov = PoseCovariance::Zero();
+    initial_cov.block(0,0,3,3) = Eigen::Vector3d(pos_var, pos_var, pos_var).asDiagonal();
+    initial_cov.block(3,3,3,3) = Eigen::Vector3d(rot_var, rot_var, rot_var).asDiagonal();
+    WPoseState initial_state;
+    initial_state.position = RotationType::vect_type(_start_pose.value().position);
+    initial_state.orientation = MTK::SO3<double>(_start_pose.value().orientation);
+    ukf.reset(new ukfom::ukf<WPoseState>(initial_state, initial_cov));
+    filter_process_noise = _process_noise_diagonal.value().asDiagonal();
+
+    // set inital transformations
+    last_odometry2body = Eigen::Affine3d::Identity();
+    odometry_at_last_icp = Eigen::Affine3d(base::unknown<double>() * Eigen::Matrix4d::Ones());
+    init_odometry = true;
+
+    last_icp_match.microseconds = 0;
+
+    // reset map point cloud
+    model_cloud.reset();
+
+    // load initial pointcloud
+    if(!_ply_path.value().empty())
+    {
+        PCLPointCloudPtr pcl_cloud(new PCLPointCloud());
+        pcl::PLYReader ply_reader;
+        if(ply_reader.read(_ply_path.value(), *pcl_cloud) >= 0)
+            setModelPointCloud(pcl_cloud);
+        else
+        {
+            LOG_ERROR_S << "Failed to load PLY model point cloud!";
+            return false;
+        }
+    }
+
+    last_state = PRE_OPERATIONAL;
+    new_state = RUNNING;
+
     return true;
 }
 
-
 void Task::updateHook()
 {
-    // read envire events
-    envire::OrocosEmitter::Ptr binary_event;
-    while(_envire_map.read(binary_event) == RTT::NewData)
+    // receive new model cloud
+    base::samples::Pointcloud pointcloud;
+    while(_model_pointcloud.readNewest(pointcloud, false) == RTT::NewData)
     {
-        env->applyEvents(*binary_event);
+        PCLPointCloudPtr pcl_pc(new PCLPointCloud());
+        convertBaseToPCLPointCloud(pointcloud.points, *pcl_pc);
+        setModelPointCloud(pcl_pc);
     }
-    
-    if(gotNewMls)
+
+    // apply external pose update
+    base::samples::RigidBodyState pose_update;
+    while(_pose_update.read(pose_update, false) == RTT::NewData)
     {
-        boost::intrusive_ptr<envire::MLSGrid> mls_grid = env->getItem<envire::MLSGrid>();
-        updateICPModelFromMap(mls_grid.get());
-        gotNewMls = false;
+        WPoseState pose_update_;
+        pose_update_.position = TranslationType(pose_update.position);
+        pose_update_.orientation = MTK::SO3<double>(pose_update.orientation);
+        PoseCovariance pose_update_cov = PoseCovariance::Zero();
+        pose_update_cov.block(0,0,3,3) = pose_update.cov_position;
+        pose_update_cov.block(3,3,3,3) = pose_update.cov_orientation;
+        ukf->update(pose_update_, boost::bind(measurementUpdate<WPoseState>, _1), pose_update_cov);
     }
     
     TaskBase::updateHook();

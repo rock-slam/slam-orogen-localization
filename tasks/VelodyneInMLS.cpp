@@ -19,15 +19,6 @@ VelodyneInMLS::~VelodyneInMLS()
 {
 }
 
-void VelodyneInMLS::odometryCallback(base::Time ts)
-{
-    Eigen::Affine3d body2Odometry;
-    if(!_body2odometry.get(ts, body2Odometry, false))
-        return;
-
-    updatePosition(ts, body2Odometry);
-}
-
 void VelodyneInMLS::lidar_samplesTransformerCallback(const base::Time &ts, const ::base::samples::DepthMap &lidar_samples_sample)
 {
     Eigen::Affine3d laser2body;
@@ -37,23 +28,8 @@ void VelodyneInMLS::lidar_samplesTransformerCallback(const base::Time &ts, const
         new_state = TaskBase::MISSING_TRANSFORMATION;
         return;
     }
-    envire::TransformWithUncertainty body2odometry;
-    if (!_body2odometry.get(ts, body2odometry, true))
-    {
-        RTT::log(RTT::Error) << "skip, have no body2odometry transformation sample!" << RTT::endlog();
-        new_state = TaskBase::MISSING_TRANSFORMATION;
-        return;
-    }
-    
-    if(init_odometry)
-    {
-            init_odometry = false;
-            last_body2odometry = body2odometry;
-            last_odometry2body = body2odometry.inverse();
-            return;
-    }
 
-    if(newICPRunPossible(body2odometry.getTransform()))
+    if(newICPRunPossible(ts))
     {
         // filter point cloud
         base::samples::DepthMap filtered_lidar_sample = lidar_samples_sample;
@@ -65,7 +41,9 @@ void VelodyneInMLS::lidar_samplesTransformerCallback(const base::Time &ts, const
         filtered_lidar_sample.convertDepthMapToPointCloud(pointcloud, laser2body);
 
         // align pointcloud to map
-        alignPointcloud(ts, pointcloud, body2odometry);
+        PCLPointCloudPtr pcl_pointcloud(new PCLPointCloud());
+        convertBaseToPCLPointCloud(pointcloud, *pcl_pointcloud);
+        alignPointcloud(ts, pcl_pointcloud);
     }
 }
 
@@ -78,8 +56,9 @@ bool VelodyneInMLS::configureHook()
     if (! VelodyneInMLSBase::configureHook())
         return false;
     
-    bodyName = _body_frame.get();
-    _body2odometry.registerUpdateCallback(boost::bind(&VelodyneInMLS::odometryCallback, this, _1));
+    body_frame = _body_frame.value();
+
+    _transformer.registerTransformCallback(_body2odometry, boost::bind(&Task::integrateOdometry, this, _1, _2));
     
     return true;
 }
