@@ -1,7 +1,7 @@
 name "localization"
 
-using_library 'pcl_registration-1.7'
-using_library 'pcl_io-1.7'
+using_library 'pcl_registration-1.8'
+using_library 'pcl_io-1.8'
 using_library 'depth_map_preprocessing'
 using_library 'base-logging'
 
