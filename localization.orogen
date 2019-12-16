@@ -1,7 +1,17 @@
 name "localization"
 
-using_library 'pcl_registration-1.7'
-using_library 'pcl_io-1.7'
+pcl_registration = Utilrb::PkgConfig.each_package.find { |name| /^pcl_registration/.match(name) }
+if(!pcl_registration)
+  raise "cannot find the pcl_registration pkg-config package"
+end
+using_library pcl_registration
+
+pcl_io = Utilrb::PkgConfig.each_package.find { |name| /^pcl_io/.match(name) }
+if(!pcl_io)
+  raise "cannot find the pcl_io pkg-config package"
+end
+using_library pcl_io
+
 using_library 'depth_map_preprocessing'
 using_library 'base-logging'
 
